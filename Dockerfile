@@ -1,12 +1,19 @@
-FROM ghcr.io/puppeteer/puppeteer:21.0.0
+FROM node:18-slim
 
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+# Puppeteer needs a few system libs
+RUN apt-get update && \
+    apt-get install -y \
+        chromium libatk-bridge2.0-0 libxkbcommon0 libgtk-3-0 libnss3 libgbm1 \
+        --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/app
-
-COPY package*.json ./
-RUN npm install --only=production --legacy-peer-deps
+COPY package.json package-lock.json* ./
+RUN npm ci --omit=dev
 COPY . .
 
-CMD ["node", "server.js"]
+ENV PORT=5000 \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
+EXPOSE 5000
+CMD ["npm", "start"]
