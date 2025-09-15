@@ -7,8 +7,8 @@ const app = express();
 app.use(express.json());
 
 // --- Environment Variables (Set these in Render) ---
-const PORTAL_USERNAME = process.env.PORTAL_USERNAME;
-const PORTAL_PASSWORD = process.env.PORTAL_PASSWORD;
+const PORTAL_USERNAME = process.env.PARTNER_PORTAL_USER;
+const PORTAL_PASSWORD = process.env.PARTNER_PORTAL_PASS;
 
 // --- Puppeteer Helper ---
 const optionByText = async (page, selector, fragment) => {
