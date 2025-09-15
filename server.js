@@ -68,6 +68,29 @@ app.post('/api/carrier_groups', async (req, res) => {
       waitUntil: 'networkidle2',
       timeout: 60000 
     });
+
+    // Add more detailed logging
+const currentUrl = page.url();
+console.log('Current URL after navigation:', currentUrl);
+
+// Check if redirected to login
+if (currentUrl.includes('/session/new') || currentUrl.includes('/login')) {
+  console.log('Redirected to login page - cookie not valid');
+  throw new Error('Authentication failed - cookie not accepted by server');
+}
+
+// Check for the form more thoroughly
+const formExists = await page.$('#carrier_group_name');
+const pageTitle = await page.title();
+console.log('Page title:', pageTitle);
+console.log('Form exists:', !!formExists);
+
+if (!formExists) {
+  // Log page content to see what we're getting
+  const bodyText = await page.$eval('body', el => el.innerText.substring(0, 500));
+  console.log('Page body preview:', bodyText);
+  throw new Error('Authentication failed - cookies may be expired');
+}
     
     // Verify we're logged in
     const isLoggedIn = await page.$('#carrier_group_name') !== null;
