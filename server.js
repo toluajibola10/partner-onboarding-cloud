@@ -28,59 +28,63 @@ const selectByText = async (page, selector, text) => {
 
 // Helper function to login
 const loginToPortal = async (page) => {
-  console.log('Navigating to login...');
-  await page.goto('https://partner.distribusion.com/session/new', { 
+  console.log('Navigating to login…');
+  await page.goto('https://partner.distribusion.com/session/new', {
     waitUntil: 'domcontentloaded',
-    timeout: 30000 
+    timeout: 30000,
   });
-  
-  await page.waitForTimeout(3000);
-  
-  // Fill login form
-  const emailFilled = await page.evaluate((email) => {
-    const selectors = ['#user_email', 'input[name="user[email]"]', 'input[type="email"]'];
-    for (const sel of selectors) {
-      const input = document.querySelector(sel);
-      if (input) {
-        input.value = email;
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        return true;
-      }
+
+  // Some installations redirect to /users/sign_in
+  await page.waitForTimeout(1500);
+
+  // list the selectors once to reuse below
+  const emailSelectors = ['#user_email', 'input[name="user[email]"]', 'input[type="email"]'];
+  const passwordSelectors = ['#user_password', 'input[name="user[password]"]', 'input[type="password"]'];
+
+  // helper that resolves to the first selector that appears
+  const firstVisible = async (list) => {
+    for (const sel of list) {
+      try {
+        await page.waitForSelector(sel, { timeout: 10000, visible: true });
+        return sel;
+      } catch { /* try next*/ }
     }
-    return false;
-  }, PORTAL_USERNAME);
-  
-  if (!emailFilled) throw new Error('Could not find email input');
-  
-  const passwordFilled = await page.evaluate((password) => {
-    const selectors = ['#user_password', 'input[name="user[password]"]', 'input[type="password"]'];
-    for (const sel of selectors) {
-      const input = document.querySelector(sel);
-      if (input) {
-        input.value = password;
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        return true;
-      }
-    }
-    return false;
-  }, PORTAL_PASSWORD);
-  
-  if (!passwordFilled) throw new Error('Could not find password input');
-  
-  console.log('Submitting login...');
-  await page.evaluate(() => {
-    const form = document.querySelector('form');
-    if (form) form.submit();
-  });
-  
-  await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
-  
-  if (page.url().includes('session/new')) {
-    throw new Error('Login failed - check credentials');
+    return null;
+  };
+
+  const emailSel = await firstVisible(emailSelectors);
+  const pwdSel   = await firstVisible(passwordSelectors);
+
+  if (!emailSel) {
+    await page.screenshot({ path: '/tmp/login-page.png' });
+    throw new Error('Email input not found – check /tmp/login-page.png');
   }
-  
+  if (!pwdSel) {
+    await page.screenshot({ path: '/tmp/login-page.png' });
+    throw new Error('Password input not found – check /tmp/login-page.png');
+  }
+
+  await page.type(emailSel, PORTAL_USERNAME, { delay: 25 });
+  await page.type(pwdSel,   PORTAL_PASSWORD, { delay: 25 });
+
+  // click the first submit/button/input[type=submit] we can find
+  const submitSel = await page.$('form button[type="submit"], form input[type="submit"]');
+  if (!submitSel) {
+    await page.screenshot({ path: '/tmp/login-page.png' });
+    throw new Error('Submit button not found – check /tmp/login-page.png');
+  }
+
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }),
+    submitSel.click(),
+  ]);
+
+  if (page.url().includes('session/new') || page.url().includes('users/sign_in')) {
+    throw new Error('Login failed – double-check credentials');
+  }
   console.log('Login successful');
 };
+
 
 app.get('/', (req, res) => {
   res.json({ 
