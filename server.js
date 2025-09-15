@@ -38,8 +38,20 @@ const loginToPortal = async (page) => {
   await page.waitForTimeout(1500);
 
   // list the selectors once to reuse below
-  const emailSelectors = ['#user_email', 'input[name="user[email]"]', 'input[type="email"]'];
-  const passwordSelectors = ['#user_password', 'input[name="user[password]"]', 'input[type="password"]'];
+  // helper → top of server.js, just below selectByText
+const emailSelectors = [
+  '#sign_in_email',             // new
+  '#user_email',
+  'input[name="user[email]"]',
+  'input[type="email"]'
+];
+
+const passwordSelectors = [
+  '#sign_in_password',          // new
+  '#user_password',
+  'input[name="user[password]"]',
+  'input[type="password"]'
+];
 
   // helper that resolves to the first selector that appears
   const firstVisible = async (list) => {
