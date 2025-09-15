@@ -1,6 +1,6 @@
-/* ─────────────────────────  server.js  ───────────────────────── */
-const express       = require('express');
-const puppeteer     = require('puppeteer-extra');
+/* ─────────────────────────  server.js  ───────────────────────── */
+const express = require('express');
+const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 
 puppeteer.use(StealthPlugin());
@@ -70,7 +70,7 @@ const loginToPortal = async page => {
   };
 
   const emailSel = await firstVisible(emailSelectors);
-  const pwdSel   = await firstVisible(passwordSelectors);
+  const pwdSel = await firstVisible(passwordSelectors);
 
   if (!emailSel || !pwdSel) {
     await page.screenshot({ path: '/tmp/login-page.png' });
@@ -78,7 +78,7 @@ const loginToPortal = async page => {
   }
 
   await page.type(emailSel, PORTAL_USERNAME, { delay: 25 });
-  await page.type(pwdSel,   PORTAL_PASSWORD, { delay: 25 });
+  await page.type(pwdSel, PORTAL_PASSWORD, { delay: 25 });
 
   const submitSel = await page.$('form button[type="submit"], form input[type="submit"]');
   if (!submitSel) {
@@ -115,6 +115,7 @@ app.post('/api/carrier_groups', async (req, res) => {
   }
 
   let browser;
+  let page; // Define page here to access it in the catch block
   try {
     browser = await puppeteer.launch({
       headless: 'new',
@@ -127,26 +128,57 @@ app.post('/api/carrier_groups', async (req, res) => {
       ],
     });
 
-    const page = await browser.newPage();
+    page = await browser.newPage();
     await page.setViewport({ width: 1366, height: 768 });
 
     await loginToPortal(page);
 
-    console.log('Going to carrier groups form…');
-    await page.goto(
-      'https://partner.distribusion.com/carrier_groups/new?locale=en',
-      { waitUntil: 'networkidle2' }
-    );
+    // ✅ START: MODIFIED NAVIGATION LOGIC
+    console.log('Navigating to carrier groups form via UI...');
+
+    // 1. Hover over the "Accounting" menu to reveal the dropdown.
+    // IMPORTANT: You MUST inspect the page to find the correct selector for this menu item.
+    const accountingMenuSelector = 'nav ul li a:first-child'; // This is a guess!
+    console.log('Waiting for Accounting menu...');
+    await page.waitForSelector(accountingMenuSelector);
+    await page.hover(accountingMenuSelector);
+    console.log('Hovering over Accounting menu.');
+
+    // 2. Wait for the "Carrier Groups" link in the dropdown to be visible, then click it.
+    // This will navigate to a page listing all existing carrier groups.
+    // IMPORTANT: Find the correct selector for the dropdown link.
+    const carrierGroupsLinkSelector = 'a[href="/carrier_groups"]'; // This is a guess!
+    console.log('Waiting for Carrier Groups link...');
+    await page.waitForSelector(carrierGroupsLinkSelector, { visible: true });
+
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2' }), // Wait for the new page to load
+      page.click(carrierGroupsLinkSelector), // Click the link
+    ]);
+    console.log('Navigated to Carrier Groups list page.');
+
+    // 3. On the list page, find and click the "Add new" button to get to the form.
+    // IMPORTANT: Find the correct selector for the 'add new' button/link.
+    const addNewButtonSelector = 'a[href="/carrier_groups/new"]'; // This is a guess!
+    console.log('Waiting for "Add New" button...');
+    await page.waitForSelector(addNewButtonSelector, { visible: true });
+
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2' }), // Wait for the form page to load
+      page.click(addNewButtonSelector), // Click the "Add new" button
+    ]);
+    console.log('Navigated to the new carrier group form.');
+    // ✅ END: MODIFIED NAVIGATION LOGIC
 
     // ensure the form is present
     await waitAndReturn(page, '#carrier_group_name');
 
     console.log('Filling carrier group form…');
-    await page.type('#carrier_group_name',     data.carrier_group_name     || '');
-    await page.type('#carrier_group_address',  data.carrier_group_address  || '');
-    await page.type('#carrier_group_vat_no',   data.carrier_group_vat_no   || '');
-    await page.type('#carrier_group_iban',     data.carrier_group_iban     || '');
-    await page.type('#carrier_group_bic',      data.carrier_group_bic      || '');
+    await page.type('#carrier_group_name', data.carrier_group_name || '');
+    await page.type('#carrier_group_address', data.carrier_group_address || '');
+    await page.type('#carrier_group_vat_no', data.carrier_group_vat_no || '');
+    await page.type('#carrier_group_iban', data.carrier_group_iban || '');
+    await page.type('#carrier_group_bic', data.carrier_group_bic || '');
 
     if (data.carrier_group_country_code)
       await page.select('#carrier_group_country_code', data.carrier_group_country_code);
@@ -171,6 +203,12 @@ app.post('/api/carrier_groups', async (req, res) => {
 
   } catch (err) {
     console.error('Error:', err.message);
+    if (page) { // Check if page exists to prevent crash on early errors
+      const errorScreenshotPath = '/tmp/carrier_group_error.png';
+      await page.screenshot({ path: errorScreenshotPath, fullPage: true });
+      console.log(`Screenshot of the error page saved to ${errorScreenshotPath}`);
+      console.log(`URL at time of error: ${page.url()}`);
+    }
     res.status(500).json({ success: false, error: err.message });
   } finally {
     if (browser) await browser.close();
@@ -178,7 +216,7 @@ app.post('/api/carrier_groups', async (req, res) => {
 });
 
 /* ─── PROVIDER creation ───────────────────────────────────────── */
-
+// NOTE: This route may also need UI navigation updates if it fails.
 app.post('/api/providers', async (req, res) => {
   const data = req.body;
   if (!PORTAL_USERNAME || !PORTAL_PASSWORD) {
@@ -211,7 +249,7 @@ app.post('/api/providers', async (req, res) => {
 
     /* BASIC INFORMATION */
     await page.type('#provider_display_name', data.provider_display_name || '');
-    await page.select('#provider_group_id',   data.provider_group_id     || '');
+    await page.select('#provider_group_id', data.provider_group_id || '');
 
     if (data.provider_revenue_stream_type)
       await selectByText(page, '#provider_revenue_stream_id', data.provider_revenue_stream_type);
@@ -224,42 +262,42 @@ app.post('/api/providers', async (req, res) => {
 
     /* LEGAL INFORMATION */
     await page.type('#provider_legal_name', data.provider_legal_name || '');
-    await page.type('#provider_address',    data.provider_address    || '');
+    await page.type('#provider_address', data.provider_address || '');
 
     if (data.provider_country_code)
       await page.select('#provider_country_code', data.provider_country_code);
 
-    await page.type('#provider_phone_number',               data.provider_phone_number               || '');
-    await page.type('#provider_email',                      data.provider_email                      || '');
+    await page.type('#provider_phone_number', data.provider_phone_number || '');
+    await page.type('#provider_email', data.provider_email || '');
     await page.type('#provider_commercial_register_number', data.provider_commercial_register_number || '');
-    await page.type('#provider_vat_no',                     data.provider_vat_no                     || '');
-    await page.type('#provider_iban',                       data.provider_iban                       || '');
-    await page.type('#provider_bic',                        data.provider_bic                        || '');
-    await page.type('#provider_authorised_representative',  data.provider_authorised_representative  || '');
+    await page.type('#provider_vat_no', data.provider_vat_no || '');
+    await page.type('#provider_iban', data.provider_iban || '');
+    await page.type('#provider_bic', data.provider_bic || '');
+    await page.type('#provider_authorised_representative', data.provider_authorised_representative || '');
 
     /* CONTACTS */
     if (data.provider_business_contact_first_name) {
       await page.type('#provider_contacts_attributes_0_first_name', data.provider_business_contact_first_name);
-      await page.type('#provider_contacts_attributes_0_last_name',  data.provider_business_contact_last_name  || '');
-      await page.type('#provider_contacts_attributes_0_email',      data.provider_business_contact_email      || '');
+      await page.type('#provider_contacts_attributes_0_last_name', data.provider_business_contact_last_name || '');
+      await page.type('#provider_contacts_attributes_0_email', data.provider_business_contact_email || '');
     }
     if (data.provider_technical_contact_first_name) {
       const addBtn = await page.$('.add_nested_fields');
       if (addBtn) await addBtn.click();
       await page.type('#provider_contacts_attributes_1_first_name', data.provider_technical_contact_first_name);
-      await page.type('#provider_contacts_attributes_1_last_name',  data.provider_technical_contact_last_name  || '');
-      await page.type('#provider_contacts_attributes_1_email',      data.provider_technical_contact_email      || '');
+      await page.type('#provider_contacts_attributes_1_last_name', data.provider_technical_contact_last_name || '');
+      await page.type('#provider_contacts_attributes_1_email', data.provider_technical_contact_email || '');
     }
 
     /* DT CONTACT */
-    await page.type('#provider_contact_person',                       data.provider_contact_person                       || '');
+    await page.type('#provider_contact_person', data.provider_contact_person || '');
     await page.type('#provider_contact_distribusion_account_manager', data.provider_contact_distribusion_account_manager || '');
 
     /* CONTRACT DETAILS */
-    await page.type('#provider_contracts_attributes_0_effective_date',      data.provider_contracts_attributes_effective_date      || '');
-    await page.type('#provider_contracts_attributes_0_duration',            data.provider_contracts_attributes_duration            || '3 years');
-    await page.type('#provider_contracts_attributes_0_termination_notice',  data.provider_contracts_attributes_termination_notice  || '6 months');
-    await page.type('#provider_contracts_attributes_0_deposit_amount',      String(data.provider_contracts_attributes_deposit_amount || '0'));
+    await page.type('#provider_contracts_attributes_0_effective_date', data.provider_contracts_attributes_effective_date || '');
+    await page.type('#provider_contracts_attributes_0_duration', data.provider_contracts_attributes_duration || '3 years');
+    await page.type('#provider_contracts_attributes_0_termination_notice', data.provider_contracts_attributes_termination_notice || '6 months');
+    await page.type('#provider_contracts_attributes_0_deposit_amount', String(data.provider_contracts_attributes_deposit_amount || '0'));
     await page.type('#provider_contracts_attributes_0_contract_directory_url', data.provider_contracts_attributes_contract_directory_url || '');
 
     if (data.provider_contracts_attributes_checked_by_legal === 'yes') {
@@ -282,19 +320,19 @@ app.post('/api/providers', async (req, res) => {
       await selectByText(page, '#provider_invoicing_cadence', data.provider_invoicing_cadence);
 
     /* COMMISSIONS & FEES */
-    await page.type('#provider_commission_affiliate_in_percent',   String(data.provider_commission_rate_for_affiliate_partners   || '0'));
-    await page.type('#provider_commission_stationary_in_percent',  String(data.provider_commission_rate_for_stationary_agencies  || '0'));
-    await page.type('#provider_commission_online_in_percent',      String(data.provider_commission_rate_for_online_agencies      || '0'));
-    await page.type('#provider_commission_white_label_in_percent', String(data.provider_commission_rate_for_ota_white_labels     || '0'));
-    await page.type('#provider_commission_point_of_sale_in_percent', String(data.provider_commission_rate_for_points_of_sale   || '0'));
+    await page.type('#provider_commission_affiliate_in_percent', String(data.provider_commission_rate_for_affiliate_partners || '0'));
+    await page.type('#provider_commission_stationary_in_percent', String(data.provider_commission_rate_for_stationary_agencies || '0'));
+    await page.type('#provider_commission_online_in_percent', String(data.provider_commission_rate_for_online_agencies || '0'));
+    await page.type('#provider_commission_white_label_in_percent', String(data.provider_commission_rate_for_ota_white_labels || '0'));
+    await page.type('#provider_commission_point_of_sale_in_percent', String(data.provider_commission_rate_for_points_of_sale || '0'));
 
-    await page.type('#provider_booking_transaction_fee_in_percent',     String(data.provider_booking_transaction_fee_in_percent     || '0'));
-    await page.type('#provider_transaction_fee_in_cents',               String(data.provider_transaction_fee_in_cents               || '0'));
+    await page.type('#provider_booking_transaction_fee_in_percent', String(data.provider_booking_transaction_fee_in_percent || '0'));
+    await page.type('#provider_transaction_fee_in_cents', String(data.provider_transaction_fee_in_cents || '0'));
     await page.type('#provider_ancillary_transaction_fee_fixed_in_cents', String(data.provider_ancillary_transaction_fee_fixed_in_cents || '0'));
-    await page.type('#provider_ancillary_transaction_fee_in_percent',   String(data.provider_ancillary_transaction_fee_in_percent   || '0'));
+    await page.type('#provider_ancillary_transaction_fee_in_percent', String(data.provider_ancillary_transaction_fee_in_percent || '0'));
 
     await page.type('#provider_vat_rate_for_invoicing', String(data.provider_vat_rate_for_invoicing || '0'));
-    await page.type('#provider_payment_fee_owl',        String(data.provider_payment_fee_owl        || '0'));
+    await page.type('#provider_payment_fee_owl', String(data.provider_payment_fee_owl || '0'));
 
     /* SUBMIT */
     console.log('Submitting provider form…');
