@@ -22,6 +22,17 @@ const optionByText = async (page, selector, fragment) => {
   }, { s: selector, f: fragment });
 };
 
+// Add this health check endpoint
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'Partner onboarding API running',
+    endpoints: [
+      'POST /api/carrier_groups',
+      'POST /api/providers'
+    ]
+  });
+});
+
 // =================================================================
 //   ENDPOINT 1: Create Carrier Group
 // =================================================================
