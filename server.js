@@ -21,7 +21,6 @@ const optionByText = async (page, selector, fragment) => {
   }, { s: selector, f: fragment });
 };
 
-
 // =================================================================
 //   ENDPOINT 1: Create Carrier Group
 // =================================================================
@@ -32,6 +31,7 @@ app.post('/api/carrier_groups', async (req, res) => {
   const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   try {
     const page = await browser.newPage();
+    page.setDefaultNavigationTimeout(180000); // Set timeout to 3 minutes
 
     // Login
     await page.goto('https://partner.distribusion.com/session/new', { waitUntil: 'networkidle2' });
@@ -53,7 +53,6 @@ app.post('/api/carrier_groups', async (req, res) => {
     const currencyValue = await optionByText(page, '#carrier_group_currency_id', data.carrier_group_currency_id);
     if (currencyValue) await page.select('#carrier_group_currency_id', currencyValue);
 
-
     // Submit
     await Promise.all([
         page.waitForNavigation({ waitUntil: 'networkidle2' }),
@@ -68,10 +67,10 @@ app.post('/api/carrier_groups', async (req, res) => {
 
   } catch (error) {
     console.error('Error creating carrier group:', error);
+    await browser.close();
     res.status(500).json({ success: false, error: error.message });
   }
 });
-
 
 // =================================================================
 //   ENDPOINT 2: Create Provider
@@ -83,6 +82,7 @@ app.post('/api/providers', async (req, res) => {
     const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
     try {
         const page = await browser.newPage();
+        page.setDefaultNavigationTimeout(180000); // Set timeout to 3 minutes
 
         // Login
         await page.goto('https://partner.distribusion.com/session/new', { waitUntil: 'networkidle2' });
@@ -94,13 +94,13 @@ app.post('/api/providers', async (req, res) => {
         // Navigate to new provider page
         await page.goto('https://partner.distribusion.com/providers/new?locale=en', { waitUntil: 'networkidle2' });
 
-        // Fill provider form (this is a simplified version, add all your fields)
+        // Fill provider form (this is a simplified version, add all your fields from n8n)
         await page.type('#provider_display_name', data.provider_display_name);
         await page.type('#provider_legal_name', data.provider_legal_name);
         await page.type('#provider_address', data.provider_address);
         await page.select('#provider_country_code', data.provider_country_code);
         await page.type('#provider_email', data.provider_email);
-        await page.select('#provider_group_id', data.provider_group_id); // Use the ID from the first call
+        await page.select('#provider_group_id', data.provider_group_id);
 
         // Submit
         await Promise.all([
@@ -110,9 +110,17 @@ app.post('/api/providers', async (req, res) => {
         
         const providerUrl = page.url();
         // Extract carrier code if it's visible on the page after creation
-        const carrierCodeElement = await page.$('.carrier-code-class'); // Use the actual selector
-        const carrierCode = carrierCodeElement ? await page.evaluate(el => el.textContent, carrierCodeElement) : 'NOT_FOUND';
-
+        // IMPORTANT: You must replace '.carrier-code-class' with the actual CSS selector for the carrier code
+        let carrierCode = 'NOT_FOUND';
+        try {
+            const carrierCodeElement = await page.waitForSelector('.carrier-code-class', { timeout: 5000 });
+            if (carrierCodeElement) {
+                carrierCode = await page.evaluate(el => el.textContent, carrierCodeElement);
+            }
+        } catch (e) {
+            console.log('Carrier code selector not found, returning default.');
+        }
+        
         console.log(`Provider created: ${providerUrl}`);
         await browser.close();
 
@@ -124,10 +132,10 @@ app.post('/api/providers', async (req, res) => {
 
     } catch (error) {
         console.error('Error creating provider:', error);
+        await browser.close();
         res.status(500).json({ success: false, error: error.message });
     }
 });
-
 
 app.listen(process.env.PORT || 3000, () => {
   console.log('Partner onboarding service is live.');
