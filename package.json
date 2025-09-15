@@ -1,7 +1,6 @@
 {
-  "name": "partner-onboarding-api",
+  "name": "partner-onboarding",
   "version": "1.0.0",
-  "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -11,9 +10,9 @@
     "puppeteer": "21.0.0",
     "puppeteer-extra": "3.3.6",
     "puppeteer-extra-plugin-stealth": "2.11.2",
-    "dotenv": "16.4.5"
+    "googleapis": "118.0.0"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=16.0.0"
   }
 }
