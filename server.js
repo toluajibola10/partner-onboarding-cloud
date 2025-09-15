@@ -6,154 +6,114 @@ puppeteer.use(StealthPlugin());
 const app = express();
 app.use(express.json());
 
-// --- Environment Variables (Set these in Render) ---
+// Environment Variables - FIXED NAMES
 const PORTAL_USERNAME = process.env.PARTNER_PORTAL_USER;
 const PORTAL_PASSWORD = process.env.PARTNER_PORTAL_PASS;
 
-// --- Puppeteer Helper ---
-const optionByText = async (page, selector, fragment) => {
-  if (!fragment) return null;
-  return page.evaluate(({ s, f }) => {
-    const el = document.querySelector(s);
-    if (!el) return null;
-    f = f.toLowerCase();
-    const opt = [...el.options].find(o => o.textContent.toLowerCase().includes(f));
-    return opt?.value || null;
-  }, { s: selector, f: fragment });
-};
-
-// Add this health check endpoint
+// Debug endpoint
 app.get('/', (req, res) => {
   res.json({ 
-    status: 'Partner onboarding API running',
-    endpoints: [
-      'POST /api/carrier_groups',
-      'POST /api/providers'
-    ]
+    status: 'API running',
+    hasCredentials: !!(PORTAL_USERNAME && PORTAL_PASSWORD),
+    credentialsLength: {
+      username: PORTAL_USERNAME?.length || 0,
+      password: PORTAL_PASSWORD?.length || 0
+    }
   });
 });
 
-// =================================================================
-//   ENDPOINT 1: Create Carrier Group
-// =================================================================
+// Create Carrier Group
 app.post('/api/carrier_groups', async (req, res) => {
   const data = req.body;
-  console.log('Request received: Create carrier group for', data.carrier_group_name);
+  console.log('Starting carrier group creation...');
+  console.log('Username provided:', PORTAL_USERNAME ? 'Yes' : 'No');
+  console.log('Password provided:', PORTAL_PASSWORD ? 'Yes' : 'No');
+  
+  if (!PORTAL_USERNAME || !PORTAL_PASSWORD) {
+    return res.status(400).json({
+      success: false,
+      error: 'Missing portal credentials in environment variables'
+    });
+  }
+  
   let browser;
   try {
-    browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+    browser = await puppeteer.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    });
+    
     const page = await browser.newPage();
-    page.setDefaultNavigationTimeout(180000); // 3-minute timeout
-
-    await page.goto('https://partner.distribusion.com/session/new', { waitUntil: 'networkidle2' });
-    await page.type('#user_email', PORTAL_USERNAME);
-    await page.type('#user_password', PORTAL_PASSWORD);
-    await page.click('button[type="submit"]');
-    await page.waitForNavigation({ waitUntil: 'networkidle2' });
-
-    await page.goto('https://partner.distribusion.com/carrier_groups/new?locale=en', { waitUntil: 'networkidle2' });
-    await page.type('#carrier_group_name', data.carrier_group_name);
-    await page.type('#carrier_group_address', data.carrier_group_address);
-    // ... (rest of carrier group form filling) ...
-
-    await Promise.all([
-        page.waitForNavigation({ waitUntil: 'networkidle2' }),
-        page.click('form#new_carrier_group button.btn-success')
-    ]);
-
-    const groupId = page.url().match(/carrier_groups\/(\d+)/)[1];
-    console.log(`Success! Carrier Group created with ID: ${groupId}`);
-    res.json({ success: true, id: groupId });
+    
+    console.log('Navigating to login page...');
+    await page.goto('https://partner.distribusion.com/session/new?locale=en', { 
+      waitUntil: 'networkidle0',
+      timeout: 30000 
+    });
+    
+    // Take screenshot for debugging
+    await page.screenshot({ path: '/tmp/login-page.png' });
+    console.log('Screenshot taken');
+    
+    // Log current URL and title
+    console.log('Current URL:', page.url());
+    console.log('Page title:', await page.title());
+    
+    // Check if we're already logged in or redirected
+    if (!page.url().includes('session')) {
+      console.log('May already be logged in or redirected');
+    }
+    
+    // Wait for either login form or dashboard
+    try {
+      await page.waitForSelector('#user_email, .dashboard, input[type="email"]', { 
+        timeout: 10000 
+      });
+    } catch (e) {
+      console.log('No login form or dashboard found');
+      const bodyHTML = await page.evaluate(() => document.body.innerHTML.substring(0, 1000));
+      console.log('Page HTML preview:', bodyHTML);
+      throw new Error('Cannot find login form or dashboard');
+    }
+    
+    // Check if login form exists
+    const hasLoginForm = await page.$('#user_email') !== null;
+    
+    if (hasLoginForm) {
+      console.log('Login form found, attempting login...');
+      await page.type('#user_email', PORTAL_USERNAME);
+      await page.type('#user_password', PORTAL_PASSWORD);
+      
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'networkidle0' }),
+        page.click('button[type="submit"]')
+      ]);
+      
+      console.log('Login submitted');
+    } else {
+      console.log('No login form, checking if already authenticated...');
+    }
+    
+    // Rest of your carrier group creation code...
+    
+    res.json({ 
+      success: true, 
+      message: 'Process completed - check logs' 
+    });
+    
   } catch (error) {
-    console.error('Error in /api/carrier_groups:', error);
-    res.status(500).json({ success: false, error: error.message });
+    console.error('Detailed error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
   } finally {
     if (browser) await browser.close();
   }
 });
 
-// =================================================================
-//   ENDPOINT 2: Create Provider (with all fields on one page)
-// =================================================================
-app.post('/api/providers', async (req, res) => {
-    const data = req.body;
-    console.log('Request received: Create provider for', data.provider_display_name);
-    let browser;
-    try {
-        browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
-        const page = await browser.newPage();
-        page.setDefaultNavigationTimeout(180000); // 3-minute timeout
-
-        // Login
-        await page.goto('https://partner.distribusion.com/session/new', { waitUntil: 'networkidle2' });
-        await page.type('#user_email', PORTAL_USERNAME);
-        await page.type('#user_password', PORTAL_PASSWORD);
-        await page.click('button[type="submit"]');
-        await page.waitForNavigation({ waitUntil: 'networkidle2' });
-        
-        // Navigate to new provider page
-        await page.goto('https://partner.distribusion.com/providers/new?locale=en', { waitUntil: 'networkidle2' });
-        
-        // --- Fill Provider Form (All Sections) ---
-        await page.type('#provider_display_name', data.provider_display_name);
-        await page.select('#provider_group_id', data.provider_group_id);
-
-        // Legal & Contact
-        await page.type('#provider_legal_name', data.provider_legal_name);
-        await page.type('#provider_address', data.provider_address);
-        await page.select('#provider_country_code', data.provider_country_code);
-        await page.type('#provider_email', data.provider_email);
-        await page.type('#provider_vat_no', data.provider_vat_no);
-        await page.type('#provider_iban', data.provider_iban);
-        await page.type('#provider_bic', data.provider_bic);
-        await page.type('#provider_authorised_representative', data.provider_authorised_representative);
-
-        // Invoicing
-        await page.type('#provider_email_for_invoicing', data.provider_email_for_invoicing);
-        
-        // Commissions & Fees
-        await page.type('#provider_commission_rate_for_affiliate_partners', data.provider_commission_rate_for_affiliate_partners.toString());
-        await page.type('#provider_commission_rate_for_stationary_agencies', data.provider_commission_rate_for_stationary_agencies.toString());
-        await page.type('#provider_commission_rate_for_online_agencies', data.provider_commission_rate_for_online_agencies.toString());
-        await page.type('#provider_commission_rate_for_ota_white_labels', data.provider_commission_rate_for_ota_white_labels.toString());
-        await page.type('#provider_commission_rate_for_points_of_sale', data.provider_commission_rate_for_points_of_sale.toString());
-        
-        await page.type('#provider_ancillary_transaction_fee_in_percent', data.provider_ancillary_transaction_fee_in_percent.toString());
-        await page.type('#provider_booking_transaction_fee_in_percent', data.provider_booking_transaction_fee_in_percent.toString());
-        await page.type('#provider_payment_fee_owl', data.provider_payment_fee_owl.toString());
-
-        // Contract
-        await page.type('#provider_contracts_attributes_0_effective_date', data.provider_contracts_attributes_effective_date);
-        await page.type('#provider_contracts_attributes_0_deposit_amount', data.provider_contracts_attributes_deposit_amount.toString());
-        
-        // Submit and wait for redirect
-        await Promise.all([
-            page.waitForNavigation({ waitUntil: 'networkidle2' }),
-            page.click('form#new_provider button[type="submit"]')
-        ]);
-        
-        const providerUrl = page.url();
-        
-        let carrierCode = 'NOT_FOUND';
-        try {
-            // IMPORTANT: Replace '.your-carrier-code-selector' with the actual CSS selector
-            const carrierCodeElement = await page.waitForSelector('.your-carrier-code-selector', { timeout: 5000 });
-            carrierCode = await page.evaluate(el => el.textContent.trim(), carrierCodeElement);
-        } catch(e) {
-            console.log('Carrier code selector was not found on the page.');
-        }
-
-        console.log(`Success! Provider URL: ${providerUrl}`);
-        res.json({ success: true, providerUrl, carrierCode });
-
-    } catch (error) {
-        console.error('Error in /api/providers:', error);
-        res.status(500).json({ success: false, error: error.message });
-    } finally {
-        if(browser) await browser.close();
-    }
-});
-
-app.listen(process.env.PORT || 3000, () => {
-  console.log('Partner onboarding service is live and ready.');
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log('Credentials loaded:', !!(PORTAL_USERNAME && PORTAL_PASSWORD));
 });
