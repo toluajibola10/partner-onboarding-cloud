@@ -1,20 +1,37 @@
 FROM node:18-slim
 
-# puppeteer -- backward compat libs
-RUN apt-get update && \
-    apt-get install -y \
-        chromium libatk-bridge2.0-0 libxkbcommon0 libgtk-3-0 libnss3 libgbm1 \
-        --no-install-recommends && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    chromium \
+    ca-certificates \
+    fonts-liberation \
+    libappindicator3-1 \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libgbm1 \
+    libgtk-3-0 \
+    libnspr4 \
+    libnss3 \
+    libx11-xcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libxss1 \
+    libxtst6 \
+    xdg-utils \
+    && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /usr/src/app
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
+WORKDIR /app
+
 COPY package*.json ./
-RUN npm install --omit=dev          # ← changed
+RUN npm install
 
 COPY . .
 
-ENV PORT=5000 \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-
-EXPOSE 5000
-CMD ["npm","start"]
+CMD ["node", "server.js"]
