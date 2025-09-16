@@ -127,12 +127,16 @@ app.post('/api/carrier_groups', async (req, res) => {
       page.click('form#new_carrier_group button.btn-success')
     ]);
 
-    const url = page.url();
-    const groupIdMatch = url.match(/carrier_groups\/(\d+)/);
-    const groupId = groupIdMatch ? groupIdMatch[1] : null;
+    // Fixed ID Extraction Logic
+    console.log('Looking for success message to extract Group ID...');
+    const successSelector = '.alert-success, .flash-notice, .notice';
+    await page.waitForSelector(successSelector, { timeout: 10000 });
+    
+    const successText = await page.$eval(successSelector, el => el.textContent);
+    const idMatch = successText.match(/(\d+)/); // Find the first number in the message
+    const groupId = idMatch ? idMatch[1] : null;
 
-    // ✅ ADDED CARRIER GROUP URL TO RESPONSE
-    const carrierGroupUrl = groupId ? `https://partner.distribusion.com/carrier_groups/${groupId}` : null;
+    const carrierGroupUrl = groupId ? `https://partner.distribusion.com/carrier_groups/${groupId}` : page.url();
     console.log('Carrier group URL:', carrierGroupUrl);
     res.json({ success: true, groupId: groupId, carrierGroupUrl: carrierGroupUrl });
 
@@ -188,25 +192,16 @@ app.post('/api/providers', async (req, res) => {
     
     // === SECTION: CONTACTS ===
     console.log('Filling Contacts section...');
-    // ⚠️ ACTION REQUIRED: Replace 'a.add_fields' with the real selector for the "Add Contact" button
-    const addContactButtonSelector = 'a.add_fields'; // This is a GUESS!
-    
     if (data.provider_business_contact_first_name) {
-      const addBtn = await page.$(addContactButtonSelector);
-      if (addBtn) await addBtn.click();
-      await page.waitForSelector('#provider_contacts_attributes_0_first_name', { visible: true });
-      
-      await selectByText(page, '#provider_contacts_attributes_0_contact_type', data.provider_business_contact_type || 'Business');
+      await page.waitForSelector('#provider_contacts_attributes_0_contact_type', { visible: true });
+      await selectByText(page, '#provider_contacts_attributes_0_contact_type', 'Business');
       await page.type('#provider_contacts_attributes_0_first_name', String(data.provider_business_contact_first_name));
       await page.type('#provider_contacts_attributes_0_last_name', String(data.provider_business_contact_last_name || ''));
       await page.type('#provider_contacts_attributes_0_email', String(data.provider_business_contact_email || ''));
     }
     if (data.provider_technical_contact_first_name) {
-      const addBtn = await page.$(addContactButtonSelector);
-      if (addBtn) await addBtn.click();
-      await page.waitForSelector('#provider_contacts_attributes_1_first_name', { visible: true });
-
-      await selectByText(page, '#provider_contacts_attributes_1_contact_type', data.provider_technical_contact_type || 'Technical');
+      await page.waitForSelector('#provider_contacts_attributes_1_contact_type', { visible: true });
+      await selectByText(page, '#provider_contacts_attributes_1_contact_type', 'Technical');
       await page.type('#provider_contacts_attributes_1_first_name', String(data.provider_technical_contact_first_name));
       await page.type('#provider_contacts_attributes_1_last_name', String(data.provider_technical_contact_last_name || ''));
       await page.type('#provider_contacts_attributes_1_email', String(data.provider_technical_contact_email || ''));
