@@ -311,6 +311,15 @@ app.post('/api/providers', async (req, res) => {
     
     // INVOICE INFORMATION
     console.log('Filling Invoice Information...');
+    const ensureChecked = async sel => {
+      const el = await page.$(sel);
+      if (el && !(await (await el.getProperty('checked')).jsonValue())) await el.click();
+    };
+    
+    await ensureChecked('#provider_invoicing_enabled');
+    await ensureChecked('#provider_receives_invoices_from_us');
+    await ensureChecked('#provider_receives_automated_invoicing_email');
+
     if (data.provider_currency_id) {
       await selectByText(page, '#provider_currency_id', data.provider_currency_id);
     }
