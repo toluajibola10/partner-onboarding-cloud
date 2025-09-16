@@ -214,6 +214,14 @@ app.post('/api/providers', async (req, res) => {
     });
   }
   
+  // Validate required group ID
+  if (!data.provider_group_id) {
+    return res.status(400).json({
+      success: false,
+      error: 'provider_group_id is required - use the ID from carrier group creation'
+    });
+  }
+  
   let browser;
   try {
     browser = await puppeteer.launch({
@@ -237,15 +245,10 @@ app.post('/api/providers', async (req, res) => {
     
     console.log('Filling provider form...');
     
-    // BASIC INFORMATION
+    // === BASIC INFORMATION ===
     await page.type('#provider_display_name', data.provider_display_name || '');
-
-    // Make sure data.provider_group_id has the value from carrier group creation
-if (!data.provider_group_id) {
-  throw new Error('provider_group_id is required - use the ID from carrier group creation');
-}
-await page.select('#provider_group_id', String(data.provider_group_id));
-
+    await page.select('#provider_group_id', String(data.provider_group_id));
+    
     if (data.provider_revenue_stream_type) {
       await selectByText(page, '#provider_revenue_stream_id', data.provider_revenue_stream_type);
     }
@@ -258,24 +261,24 @@ await page.select('#provider_group_id', String(data.provider_group_id));
       await selectByText(page, '#provider_carrier_type_id', data.provider_carrier_type);
     }
     
-  // LEGAL INFORMATION
-await typeIfExists(page, '#provider_legal_name', data.provider_legal_name);
-await typeIfExists(page, '#provider_address', data.provider_address);
-
-if (data.provider_country_code) {
-  await page.select('#provider_country_code', data.provider_country_code);
-  console.log('✓ Selected country code');
-}
-
-await typeIfExists(page, '#provider_phone_number', data.provider_phone_number);
-await typeIfExists(page, '#provider_email', data.provider_email);
-await typeIfExists(page, '#provider_commercial_register_number', data.provider_commercial_register_number);
-await typeIfExists(page, '#provider_vat_no', data.provider_vat_no);
-await typeIfExists(page, '#provider_iban', data.provider_iban);
-await typeIfExists(page, '#provider_bic', data.provider_bic);
-await typeIfExists(page, '#provider_authorised_representative', data.provider_authorised_representative);
+    // === LEGAL INFORMATION ===
+    await typeIfExists(page, '#provider_legal_name', data.provider_legal_name);
+    await typeIfExists(page, '#provider_address', data.provider_address);
     
-    // CONTACTS SECTION - Using correct selectors based on inspect
+    if (data.provider_country_code) {
+      await page.select('#provider_country_code', data.provider_country_code);
+      console.log('✓ Selected country code');
+    }
+    
+    await typeIfExists(page, '#provider_phone_number', data.provider_phone_number);
+    await typeIfExists(page, '#provider_email', data.provider_email);
+    await typeIfExists(page, '#provider_commercial_register_number', data.provider_commercial_register_number);
+    await typeIfExists(page, '#provider_vat_no', data.provider_vat_no);
+    await typeIfExists(page, '#provider_iban', data.provider_iban);
+    await typeIfExists(page, '#provider_bic', data.provider_bic);
+    await typeIfExists(page, '#provider_authorised_representative', data.provider_authorised_representative);
+    
+    // === CONTACTS SECTION ===
     console.log('Filling Contacts section...');
     
     // Business Contact (Row 1)
@@ -294,12 +297,12 @@ await typeIfExists(page, '#provider_authorised_representative', data.provider_au
       await typeIfExists(page, '#contact_email_2', data.provider_technical_contact_email);
     }
 
-    // DT CONTACT SECTION
+    // === DT CONTACT SECTION ===
     console.log('Filling DT Contacts section...');
-    await typeIfExists(page, '#provider_contact_person', data.provider_contact_person);
-    await typeIfExists(page, '#provider_contact_distribusion_account_manager', data.provider_contact_distribusion_account_manager);
+    await typeIfExists(page, '#provider_contact_person', data.provider_business_contact_email);
+    await typeIfExists(page, '#provider_contact_distribusion_account_manager', data.provider_email);
     
-    // CONTRACT DETAILS
+    // === CONTRACT DETAILS ===
     console.log('Filling Contract Details...');
     await typeIfExists(page, '#provider_contract_attributes_effective_date', data.provider_contracts_attributes_effective_date);
     await typeIfExists(page, '#provider_contract_attributes_duration', data.provider_contracts_attributes_duration || '3 years');
@@ -309,27 +312,36 @@ await typeIfExists(page, '#provider_authorised_representative', data.provider_au
     
     if (data.provider_contracts_attributes_checked_by_legal === 'yes') {
       const checkbox = await page.$('#provider_contract_attributes_checked_by_legal');
-      if (checkbox) await checkbox.click();
+      if (checkbox) {
+        await checkbox.click();
+        console.log('✓ Checked legal checkbox');
+      }
     }
     
     if (data.provider_contracts_attributes_invoicing_entity) {
       await selectByText(page, '#provider_contract_attributes_invoicing_entity_id', data.provider_contracts_attributes_invoicing_entity);
     }
     
-   // INVOICE INFORMATION
-console.log('Filling Invoice Information...');
-
-// Define the function first
-const ensureChecked = async sel => {
-  const el = await page.$(sel);
-  if (el && !(await (await el.getProperty('checked')).jsonValue())) await el.click();
-};
-
-// These should always be checked
-await ensureChecked('#provider_invoicing_enabled');
-await ensureChecked('#provider_receives_invoices_from_us');
-await ensureChecked('#provider_receives_automated_invoicing_email');
-
+    // === INVOICE INFORMATION ===
+    console.log('Filling Invoice Information...');
+    
+    // Define checkbox helper function
+    const ensureChecked = async sel => {
+      const el = await page.$(sel);
+      if (el) {
+        const isChecked = await (await el.getProperty('checked')).jsonValue();
+        if (!isChecked) {
+          await el.click();
+          console.log(`✓ Checked ${sel}`);
+        }
+      }
+    };
+    
+    // These MUST be checked according to your document
+    await ensureChecked('#provider_invoicing_enabled');
+    await ensureChecked('#provider_receives_invoices_from_us');
+    await ensureChecked('#provider_receives_automated_invoicing_email');
+    
     if (data.provider_currency_id) {
       await selectByText(page, '#provider_currency_id', data.provider_currency_id);
     }
@@ -338,36 +350,37 @@ await ensureChecked('#provider_receives_automated_invoicing_email');
       await selectByText(page, '#provider_invoicing_type_id', data.provider_invoicing_type);
     }
     
-    if (data.provider_email_for_invoicing) {
     await typeIfExists(page, '#provider_email_for_invoicing', data.provider_email_for_invoicing);
-    }
-
+    
     if (data.provider_invoicing_cadence) {
       await selectByText(page, '#provider_invoicing_cadence', data.provider_invoicing_cadence);
     }
     
-    // COMMISSIONS & FEES
+    // === COMMISSIONS & FEES ===
     console.log('Filling Commissions & Fees...');
-    await typeIfExists(page, '#provider_commission_rate_for_affiliates', String(data.provider_commission_rate_for_affiliate_partners || '0'));
+    
+    // Transaction fee type selectors BEFORE the percentages
+    if (data.provider_ancillary_transaction_fee_type) {
+      await selectByText(page, '#provider_ancillary_transaction_fee_type', data.provider_ancillary_transaction_fee_type);
+    }
+    if (data.provider_booking_transaction_fee_type) {
+      await selectByText(page, '#provider_booking_transaction_fee_type', data.provider_booking_transaction_fee_type);
+    }
+    
+    // Commission rates
+    await typeIfExists(page, '#provider_commission_rate_for_affiliate_partners', String(data.provider_commission_rate_for_affiliate_partners || '0'));
     await typeIfExists(page, '#provider_commission_rate_for_stationary_agencies', String(data.provider_commission_rate_for_stationary_agencies || '0'));
     await typeIfExists(page, '#provider_commission_rate_for_online_agencies', String(data.provider_commission_rate_for_online_agencies || '0'));
     await typeIfExists(page, '#provider_commission_rate_for_ota_white_labels', String(data.provider_commission_rate_for_ota_white_labels || '0'));
     await typeIfExists(page, '#provider_commission_rate_for_points_of_sale', String(data.provider_commission_rate_for_points_of_sale || '0'));
-
-    // Transaction fee type selectors
-if (data.provider_ancillary_transaction_fee_type) {
-  await selectByText(page, '#provider_ancillary_transaction_fee_type', data.provider_ancillary_transaction_fee_type);
-}
-if (data.provider_booking_transaction_fee_type) {
-  await selectByText(page, '#provider_booking_transaction_fee_type', data.provider_booking_transaction_fee_type);
-}
     
+    // Transaction fees
     await typeIfExists(page, '#provider_booking_transaction_fee_in_percent', String(data.provider_booking_transaction_fee_in_percent || '0'));
     await typeIfExists(page, '#provider_transaction_fee_in_cents', String(data.provider_transaction_fee_in_cents || '0'));
-    
     await typeIfExists(page, '#provider_ancillary_transaction_fee_fixed_in_cents', String(data.provider_ancillary_transaction_fee_fixed_in_cents || '0'));
     await typeIfExists(page, '#provider_ancillary_transaction_fee_in_percent', String(data.provider_ancillary_transaction_fee_in_percent || '0'));
     
+    // VAT and payment fee
     await typeIfExists(page, '#provider_vat_rate_for_invoicing', String(data.provider_vat_rate_for_invoicing || '0'));
     await typeIfExists(page, '#provider_payment_fee_owl', String(data.provider_payment_fee_owl || '0'));
     
@@ -379,10 +392,31 @@ if (data.provider_booking_transaction_fee_type) {
     ]);
     
     const providerUrl = page.url();
+    
+    // Check if creation was successful
+    if (providerUrl.includes('/providers?') || providerUrl.includes('/new')) {
+      // Take screenshot for debugging
+      await page.screenshot({ path: 'provider-error.png', fullPage: true });
+      
+      // Try to get error messages
+      const errors = await page.evaluate(() => {
+        const errorTexts = [];
+        document.querySelectorAll('.error, .alert, .field_with_errors, [class*="error"]').forEach(el => {
+          if (el.textContent.trim()) errorTexts.push(el.textContent.trim());
+        });
+        return errorTexts;
+      });
+      
+      console.error('Provider creation failed. URL:', providerUrl);
+      console.error('Validation errors:', errors);
+      
+      throw new Error(`Provider creation failed. Check provider-error.png. Errors: ${errors.join(', ') || 'Unknown validation error'}`);
+    }
+    
     const providerIdMatch = providerUrl.match(/providers\/(\d+)/);
     const providerId = providerIdMatch ? providerIdMatch[1] : null;
     
-    console.log('Provider created:', providerUrl);
+    console.log('Provider created successfully:', providerUrl);
     
     res.json({
       success: true,
