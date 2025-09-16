@@ -127,6 +127,7 @@ app.post('/api/carrier_groups', async (req, res) => {
     const groupId = page.url().match(/carrier_groups\/(\d+)/)?.[1] || null;
     res.json({ success:true, groupId });
   } catch (e) {
+    console.error('Provider-route error:', e.stack || e);
     res.status(500).json({ success:false, error:e.message });
   } finally { if (browser) await browser.close(); }
 });
