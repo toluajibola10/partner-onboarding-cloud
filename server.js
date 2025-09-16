@@ -87,7 +87,6 @@ app.get('/', (req, res) => {
 // CARRIER GROUP CREATION
 app.post('/api/carrier_groups', async (req, res) => {
   const data = req.body;
-
   if (!PORTAL_USERNAME || !PORTAL_PASSWORD) {
     return res.status(400).json({ success: false, error: 'Missing portal credentials' });
   }
@@ -109,9 +108,7 @@ app.post('/api/carrier_groups', async (req, res) => {
     console.log('Going to carrier groups form...');
     await page.goto('https://partner.distribusion.com/carrier_groups/new?locale=en', { waitUntil: 'networkidle2' });
 
-    if (!(await page.$('#carrier_group_name'))) {
-      throw new Error('Carrier group form not found');
-    }
+    await page.waitForSelector('#carrier_group_name', { visible: true });
 
     console.log('Filling carrier group form...');
     await page.type('#carrier_group_name', String(data.carrier_group_name || ''));
@@ -134,8 +131,10 @@ app.post('/api/carrier_groups', async (req, res) => {
     const groupIdMatch = url.match(/carrier_groups\/(\d+)/);
     const groupId = groupIdMatch ? groupIdMatch[1] : null;
 
-    console.log('Carrier group created with ID:', groupId);
-    res.json({ success: true, groupId: groupId });
+    // ✅ ADDED CARRIER GROUP URL TO RESPONSE
+    const carrierGroupUrl = groupId ? `https://partner.distribusion.com/carrier_groups/${groupId}` : null;
+    console.log('Carrier group URL:', carrierGroupUrl);
+    res.json({ success: true, groupId: groupId, carrierGroupUrl: carrierGroupUrl });
 
   } catch (error) {
     console.error('Error:', error.message);
@@ -148,7 +147,6 @@ app.post('/api/carrier_groups', async (req, res) => {
 // PROVIDER CREATION
 app.post('/api/providers', async (req, res) => {
   const data = req.body;
-
   if (!PORTAL_USERNAME || !PORTAL_PASSWORD) {
     return res.status(400).json({ success: false, error: 'Missing portal credentials' });
   }
@@ -163,6 +161,7 @@ app.post('/api/providers', async (req, res) => {
 
     const page = await browser.newPage();
     await page.setViewport({ width: 1366, height: 768 });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
     await loginToPortal(page);
 
@@ -189,22 +188,34 @@ app.post('/api/providers', async (req, res) => {
     
     // === SECTION: CONTACTS ===
     console.log('Filling Contacts section...');
+    // ⚠️ ACTION REQUIRED: Replace 'a.add_fields' with the real selector for the "Add Contact" button
+    const addContactButtonSelector = 'a.add_fields'; // This is a GUESS!
+    
     if (data.provider_business_contact_first_name) {
-      if(data.provider_business_contact_type) await selectByText(page, '#provider_contacts_attributes_0_contact_type_id', data.provider_business_contact_type);
+      const addBtn = await page.$(addContactButtonSelector);
+      if (addBtn) await addBtn.click();
+      await page.waitForSelector('#provider_contacts_attributes_0_first_name', { visible: true });
+      
+      await selectByText(page, '#provider_contacts_attributes_0_contact_type', data.provider_business_contact_type || 'Business');
       await page.type('#provider_contacts_attributes_0_first_name', String(data.provider_business_contact_first_name));
       await page.type('#provider_contacts_attributes_0_last_name', String(data.provider_business_contact_last_name || ''));
       await page.type('#provider_contacts_attributes_0_email', String(data.provider_business_contact_email || ''));
     }
     if (data.provider_technical_contact_first_name) {
-      const addBtn = await page.$('.add_nested_fields');
+      const addBtn = await page.$(addContactButtonSelector);
       if (addBtn) await addBtn.click();
-      
       await page.waitForSelector('#provider_contacts_attributes_1_first_name', { visible: true });
-      if(data.provider_technical_contact_type) await selectByText(page, '#provider_contacts_attributes_1_contact_type_id', data.provider_technical_contact_type);
+
+      await selectByText(page, '#provider_contacts_attributes_1_contact_type', data.provider_technical_contact_type || 'Technical');
       await page.type('#provider_contacts_attributes_1_first_name', String(data.provider_technical_contact_first_name));
       await page.type('#provider_contacts_attributes_1_last_name', String(data.provider_technical_contact_last_name || ''));
       await page.type('#provider_contacts_attributes_1_email', String(data.provider_technical_contact_email || ''));
     }
+
+    // === SECTION: DT CONTACT ===
+    console.log('Filling DT Contacts section...');
+    await page.type('#provider_contact_person', String(data.provider_contact_person || ''));
+    await page.type('#provider_contact_distribusion_account_manager', String(data.provider_contact_distribusion_account_manager || ''));
 
     // === SECTION: CONTRACT DETAILS ===
     console.log('Filling Contract Details section...');
