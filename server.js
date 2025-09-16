@@ -27,11 +27,12 @@ const selectByText = async (page, selector, text) => {
 };
 
 // Helper function to type only if field exists
-const typeIfExists = async (page, selector, text) => {
+const typeIfExists = async (page, selector, text, timeout = 5000) => {
   if (text === undefined || text === null || text === '') return;
   try {
-    await page.waitForSelector(selector, { visible: true, timeout: 3000 });
+    await page.waitForSelector(selector, { visible: true, timeout: timeout });
     await page.type(selector, String(text));
+    console.log(`✓ Filled ${selector}`);
   } catch (error) {
     console.warn(`Could not find selector "${selector}", skipping.`);
   }
@@ -108,7 +109,7 @@ app.get('/', (req, res) => {
   });
 });
 
-// CARRIER GROUP CREATION
+// CARRIER GROUP CREATION (WORKING VERSION)
 app.post('/api/carrier_groups', async (req, res) => {
   const data = req.body;
   
@@ -188,27 +189,20 @@ app.post('/api/carrier_groups', async (req, res) => {
   }
 });
 
-// PROVIDER CREATION
+// PROVIDER CREATION - DEBUG VERSION
 app.post('/api/providers', async (req, res) => {
   const data = req.body;
   
   if (!PORTAL_USERNAME || !PORTAL_PASSWORD) {
-    return res.status(400).json({
-      success: false,
-      error: 'Missing portal credentials'
-    });
+    return res.status(400).json({ success: false, error: 'Missing portal credentials' });
   }
   
   let browser;
   try {
     browser = await puppeteer.launch({
-      headless: 'new',
+      headless: false, // Set to false to watch what happens
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage'
-      ]
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
     });
     
     const page = await browser.newPage();
@@ -222,132 +216,164 @@ app.post('/api/providers', async (req, res) => {
       timeout: 60000
     });
     
-    console.log('Filling provider form...');
+    // DEBUG: Wait and check what fields actually exist
+    await page.waitForTimeout(5000);
+    console.log('=== DEBUGGING FIELD PRESENCE ===');
     
-    // BASIC INFORMATION
-    await page.type('#provider_display_name', data.provider_display_name || '');
-    await page.select('#provider_group_id', data.provider_group_id || '');
+    // Check which basic fields exist
+    const fieldsToCheck = [
+      '#provider_display_name',
+      '#provider_group_id',
+      '#provider_revenue_stream_id',
+      '#provider_revenue_stream_type',
+      '#provider_status_id',
+      '#provider_status',
+      '#provider_carrier_type_id',
+      '#provider_carrier_type',
+      '#provider_legal_name',
+      '#provider_contacts_attributes_0_first_name',
+      '#provider_contracts_attributes_0_effective_date',
+      '#provider_commission_affiliate_in_percent',
+      '#provider_commission_rate_for_affiliate_partners'
+    ];
     
-    if (data.provider_revenue_stream_type) {
-      await selectByText(page, '#provider_revenue_stream_id', data.provider_revenue_stream_type);
+    for (const selector of fieldsToCheck) {
+      const exists = await page.$(selector) !== null;
+      console.log(`${selector}: ${exists ? '✓ EXISTS' : '✗ NOT FOUND'}`);
     }
     
-    if (data.provider_status) {
-      await selectByText(page, '#provider_status_id', data.provider_status);
-    }
-    
-    if (data.provider_carrier_type) {
-      await selectByText(page, '#provider_carrier_type_id', data.provider_carrier_type);
-    }
-    
-    // LEGAL INFORMATION
-    await page.type('#provider_legal_name', data.provider_legal_name || '');
-    await page.type('#provider_address', data.provider_address || '');
-    
-    if (data.provider_country_code) {
-      await page.select('#provider_country_code', data.provider_country_code);
-    }
-    
-    await typeIfExists(page, '#provider_phone_number', data.provider_phone_number);
-    await page.type('#provider_email', data.provider_email || '');
-    await typeIfExists(page, '#provider_commercial_register_number', data.provider_commercial_register_number);
-    await page.type('#provider_vat_no', data.provider_vat_no || '');
-    await page.type('#provider_iban', data.provider_iban || '');
-    await page.type('#provider_bic', data.provider_bic || '');
-    await page.type('#provider_authorised_representative', data.provider_authorised_representative || '');
-    
-    // CONTACTS SECTION
-    console.log('Filling Contacts section...');
-    
-   // 🟦 Business Contact (Contact #1)
-await selectByText(page, '#contact_contact_type_1', 'Business');
-await typeIfExists(page, '#contact_first_name_1', data.provider_business_contact_first_name);
-await typeIfExists(page, '#contact_last_name_1', data.provider_business_contact_last_name);
-await typeIfExists(page, '#contact_email_1', data.provider_business_contact_email);
-
-// 🟪 Technical Contact (Contact #2)
-await selectByText(page, '#contact_contact_type_2', 'Technical');
-await typeIfExists(page, '#contact_first_name_2', data.provider_technical_contact_first_name);
-await typeIfExists(page, '#contact_last_name_2', data.provider_technical_contact_last_name);
-await typeIfExists(page, '#contact_email_2', data.provider_technical_contact_email);
-
-    // DT CONTACT SECTION
-    console.log('Filling DT Contacts section...');
-    await typeIfExists(page, '#provider_contact_person', data.provider_contact_person);
-    await typeIfExists(page, '#provider_contact_distribusion_account_manager', data.provider_contact_distribusion_account_manager);
-    
-    // CONTRACT DETAILS
-    await typeIfExists(page, '#provider_contract_attributes_0_effective_date', data.provider_contracts_attributes_effective_date);
-    await typeIfExists(page, '#provider_contract_attributes_0_duration', data.provider_contracts_attributes_duration || '3 years');
-    await typeIfExists(page, '#provider_contract_attributes_0_termination_notice', data.provider_contracts_attributes_termination_notice || '6 months');
-    await typeIfExists(page, '#provider_contract_attributes_0_deposit_amount', String(data.provider_contracts_attributes_deposit_amount || '0'));
-    await typeIfExists(page, '#provider_contract_attributes_0_contract_directory_url', data.provider_contracts_attributes_contract_directory_url);
-    
-    if (data.provider_contract_attributes_checked_by_legal === 'yes') {
-      const checkbox = await page.$('#provider_contract_attributes_0_checked_by_legal');
-      if (checkbox) await checkbox.click();
-    }
-    
-    if (data.provider_contract_attributes_invoicing_entity) {
-      await selectByText(page, '#provider_contract_attributes_0_invoicing_entity_id', data.provider_contract_attributes_invoicing_entity);
-    }
-    
-    // INVOICE INFORMATION
-    if (data.provider_currency_id) {
-      await selectByText(page, '#provider_currency_id', data.provider_currency_id);
-    }
-    
-    if (data.provider_invoicing_type) {
-      await selectByText(page, '#provider_invoicing_type_id', data.provider_invoicing_type);
-    }
-    
-    await typeIfExists(page, '#provider_email_for_invoicing', data.provider_email_for_invoicing);
-    
-    if (data.provider_invoicing_cadence) {
-      await selectByText(page, '#provider_invoicing_cadence', data.provider_invoicing_cadence);
-    }
-    
-    // COMMISSIONS & FEES
-    await typeIfExists(page, '#provider_commission_affiliate_in_percent', String(data.provider_commission_rate_for_affiliate_partners || '0'));
-    await typeIfExists(page, '#provider_commission_stationary_in_percent', String(data.provider_commission_rate_for_stationary_agencies || '0'));
-    await typeIfExists(page, '#provider_commission_online_in_percent', String(data.provider_commission_rate_for_online_agencies || '0'));
-    await typeIfExists(page, '#provider_commission_white_label_in_percent', String(data.provider_commission_rate_for_ota_white_labels || '0'));
-    await typeIfExists(page, '#provider_commission_point_of_sale_in_percent', String(data.provider_commission_rate_for_points_of_sale || '0'));
-    
-    await typeIfExists(page, '#provider_booking_transaction_fee_in_percent', String(data.provider_booking_transaction_fee_in_percent || '0'));
-    await typeIfExists(page, '#provider_transaction_fee_in_cents', String(data.provider_transaction_fee_in_cents || '0'));
-    
-    await typeIfExists(page, '#provider_ancillary_transaction_fee_fixed_in_cents', String(data.provider_ancillary_transaction_fee_fixed_in_cents || '0'));
-    await typeIfExists(page, '#provider_ancillary_transaction_fee_in_percent', String(data.provider_ancillary_transaction_fee_in_percent || '0'));
-    
-    await typeIfExists(page, '#provider_vat_rate_for_invoicing', String(data.provider_vat_rate_for_invoicing || '0'));
-    await typeIfExists(page, '#provider_payment_fee_owl', String(data.provider_payment_fee_owl || '0'));
-    
-    console.log('Submitting provider form...');
-    
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'networkidle2' }),
-      page.click('form#new_provider button[type="submit"]')
-    ]);
-    
-    const providerUrl = page.url();
-    const providerIdMatch = providerUrl.match(/providers\/(\d+)/);
-    const providerId = providerIdMatch ? providerIdMatch[1] : null;
-    
-    console.log('Provider created:', providerUrl);
-    
-    res.json({
-      success: true,
-      providerId: providerId,
-      providerUrl: providerUrl
+    // DEBUG: Get ALL input field IDs on the page
+    console.log('\n=== ALL INPUT/SELECT/TEXTAREA FIELD IDs ON PAGE ===');
+    const allFieldIds = await page.evaluate(() => {
+      const fields = document.querySelectorAll('input[id], select[id], textarea[id]');
+      return Array.from(fields).map(el => ({
+        id: el.id,
+        type: el.tagName.toLowerCase(),
+        name: el.name || ''
+      })).filter(item => item.id);
     });
+    
+    console.log('Total fields found:', allFieldIds.length);
+    allFieldIds.forEach(field => {
+      console.log(`  ${field.type}#${field.id} (name: ${field.name})`);
+    });
+    
+    // DEBUG: Look specifically for commission fields
+    console.log('\n=== COMMISSION FIELDS SEARCH ===');
+    const commissionFields = allFieldIds.filter(field => 
+      field.id.includes('commission') || 
+      field.id.includes('affiliate') || 
+      field.id.includes('stationary')
+    );
+    console.log('Commission-related fields:', commissionFields);
+    
+    // DEBUG: Look for contract fields
+    console.log('\n=== CONTRACT FIELDS SEARCH ===');
+    const contractFields = allFieldIds.filter(field => 
+      field.id.includes('contract') || 
+      field.id.includes('effective') || 
+      field.id.includes('duration')
+    );
+    console.log('Contract-related fields:', contractFields);
+    
+    // DEBUG: Look for contact fields
+    console.log('\n=== CONTACT FIELDS SEARCH ===');
+    const contactFields = allFieldIds.filter(field => 
+      field.id.includes('contact') || 
+      field.id.includes('first_name') || 
+      field.id.includes('last_name')
+    );
+    console.log('Contact-related fields:', contactFields);
+    
+    // Take a screenshot of the form
+    await page.screenshot({ path: 'provider-form-debug.png', fullPage: true });
+    console.log('Screenshot saved as provider-form-debug.png');
+    
+    // Now try to fill the form with what we know exists
+    console.log('\n=== ATTEMPTING TO FILL BASIC FIELDS ===');
+    
+    // Fill basic fields that should definitely exist
+    if (await page.$('#provider_display_name')) {
+      await page.type('#provider_display_name', data.provider_display_name || '');
+      console.log('✓ Filled display name');
+    } else {
+      console.log('✗ Could not find #provider_display_name');
+    }
+    
+    if (await page.$('#provider_group_id')) {
+      await page.select('#provider_group_id', String(data.provider_group_id || ''));
+      console.log('✓ Selected group ID:', data.provider_group_id);
+    } else {
+      console.log('✗ Could not find #provider_group_id');
+    }
+    
+    // Try different patterns for revenue stream
+    const revenuePatterns = [
+      '#provider_revenue_stream_id',
+      '#provider_revenue_stream_type',
+      '#provider_revenue_stream'
+    ];
+    
+    let foundRevenue = false;
+    for (const pattern of revenuePatterns) {
+      if (await page.$(pattern)) {
+        await selectByText(page, pattern, data.provider_revenue_stream_type);
+        console.log(`✓ Found and filled revenue stream with ${pattern}`);
+        foundRevenue = true;
+        break;
+      }
+    }
+    if (!foundRevenue) {
+      console.log('✗ Could not find any revenue stream field');
+    }
+    
+    // Try filling legal name
+    if (await page.$('#provider_legal_name')) {
+      await page.type('#provider_legal_name', data.provider_legal_name || '');
+      console.log('✓ Filled legal name');
+    } else {
+      console.log('✗ Could not find #provider_legal_name');
+    }
+    
+    // Check if we can find ANY contact fields using various patterns
+    console.log('\n=== CHECKING CONTACT FIELD PATTERNS ===');
+    const contactPatterns = [
+      'input[name*="contacts"][name*="first_name"]',
+      'input[id*="contacts"][id*="first_name"]',
+      '.provider_contacts_row input',
+      'table input[placeholder*="First"]'
+    ];
+    
+    for (const pattern of contactPatterns) {
+      const elements = await page.$$(pattern);
+      if (elements.length > 0) {
+        console.log(`✓ Found ${elements.length} elements with pattern: ${pattern}`);
+      }
+    }
+    
+    console.log('\n=== DEBUG COMPLETE ===');
+    console.log('Check the console output above to see actual field IDs.');
+    console.log('Browser will stay open for 30 seconds for manual inspection.');
+    
+    // Don't submit yet - just return debug info
+    res.json({
+      success: false,
+      message: 'Debug mode - check server console for field analysis',
+      foundFields: allFieldIds.length,
+      debugInfo: {
+        totalFields: allFieldIds.length,
+        commissionFieldsCount: commissionFields.length,
+        contractFieldsCount: contractFields.length,
+        contactFieldsCount: contactFields.length
+      }
+    });
+    
+    // Keep browser open for inspection
+    await new Promise(resolve => setTimeout(resolve, 30000));
     
   } catch (error) {
     console.error('Error:', error.message);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    res.status(500).json({ success: false, error: error.message });
   } finally {
     if (browser) await browser.close();
   }
