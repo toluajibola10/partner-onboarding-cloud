@@ -239,8 +239,13 @@ app.post('/api/providers', async (req, res) => {
     
     // BASIC INFORMATION
     await page.type('#provider_display_name', data.provider_display_name || '');
-    await page.select('#provider_group_id', String(data.provider_group_id || ''));
-    
+
+    // Make sure data.provider_group_id has the value from carrier group creation
+if (!data.provider_group_id) {
+  throw new Error('provider_group_id is required - use the ID from carrier group creation');
+}
+await page.select('#provider_group_id', String(data.provider_group_id));
+
     if (data.provider_revenue_stream_type) {
       await selectByText(page, '#provider_revenue_stream_id', data.provider_revenue_stream_type);
     }
@@ -311,19 +316,19 @@ await typeIfExists(page, '#provider_authorised_representative', data.provider_au
       await selectByText(page, '#provider_contract_attributes_invoicing_entity_id', data.provider_contracts_attributes_invoicing_entity);
     }
     
-    // INVOICE INFORMATION
-    console.log('Filling Invoice Information...');
-    
-// Check the invoicing checkboxes if they should be checked
-if (data.provider_invoicing_enabled === 'yes' || data.provider_invoicing_enabled === true) {
-  await ensureChecked('#provider_invoicing_enabled');
-}
-if (data.provider_receives_invoices_from_us === 'yes' || data.provider_receives_invoices_from_us === true) {
-  await ensureChecked('#provider_receives_invoices_from_us');
-}
-if (data.provider_receives_automated_invoicing_email === 'yes' || data.provider_receives_automated_invoicing_email === true) {
-  await ensureChecked('#provider_receives_automated_invoicing_email');
-}
+   // INVOICE INFORMATION
+console.log('Filling Invoice Information...');
+
+// Define the function first
+const ensureChecked = async sel => {
+  const el = await page.$(sel);
+  if (el && !(await (await el.getProperty('checked')).jsonValue())) await el.click();
+};
+
+// These should always be checked
+await ensureChecked('#provider_invoicing_enabled');
+await ensureChecked('#provider_receives_invoices_from_us');
+await ensureChecked('#provider_receives_automated_invoicing_email');
 
     if (data.provider_currency_id) {
       await selectByText(page, '#provider_currency_id', data.provider_currency_id);
