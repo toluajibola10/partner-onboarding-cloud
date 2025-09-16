@@ -2,98 +2,123 @@ const express = require('express');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 
+
 puppeteer.use(StealthPlugin());
 const app = express();
 app.use(express.json());
 
+
 const PORTAL_USERNAME = process.env.PORTAL_EMAIL;
 const PORTAL_PASSWORD = process.env.PORTAL_PASSWORD;
 
-// === HELPER FUNCTIONS ===
 
+// Helper function to select dropdown by text
 const selectByText = async (page, selector, text) => {
-  if (!text) return;
-  try {
-    await page.waitForSelector(selector, { visible: true, timeout: 3000 });
-    const optionValue = await page.evaluate((sel, txt) => {
-      const select = document.querySelector(sel);
-      if (!select) return null;
-      const option = Array.from(select.options).find(opt =>
-        opt.textContent.toLowerCase().includes(txt.toLowerCase())
-      );
-      return option?.value;
-    }, selector, text);
+ if (!text) return;
+ const optionValue = await page.evaluate((sel, txt) => {
+   const select = document.querySelector(sel);
+   if (!select) return null;
+   const option = Array.from(select.options).find(opt =>
+     opt.textContent.toLowerCase().includes(txt.toLowerCase())
+   );
+   return option?.value;
+ }, selector, text);
 
-    if (optionValue) {
-      await page.select(selector, optionValue);
-    }
-  } catch (error) {
-    console.warn(`Could not find selector "${selector}" for selection, skipping.`);
-  }
+
+ if (optionValue) {
+   await page.select(selector, optionValue);
+ }
 };
 
-const typeIfExists = async (page, selector, text) => {
-  if (text === undefined || text === null || text === '') return;
-  try {
-    await page.waitForSelector(selector, { visible: true, timeout: 3000 });
-    await page.type(selector, String(text));
-  } catch (error) {
-    console.warn(`Could not find selector "${selector}", skipping type operation.`);
-  }
-};
 
-// === LOGIN LOGIC ===
-
+// Helper function for login
 const loginToPortal = async (page) => {
-  console.log('Navigating to login...');
-  await page.goto('https://partner.distribusion.com/session/new', {
-    waitUntil: 'networkidle2',
-    timeout: 30000
-  });
-  await page.waitForTimeout(3000);
-  const emailSelectors = ['#user_email', 'input[name="user[email]"]', 'input[type="email"]', '#sign_in_email'];
-  let emailSelector = null;
-  for (const sel of emailSelectors) {
-    if (await page.$(sel) !== null) {
-      emailSelector = sel;
-      console.log(`Found email field: ${sel}`);
-      break;
-    }
-  }
-  if (!emailSelector) throw new Error('Could not find email input field');
-  const passwordSelectors = ['#user_password', 'input[name="user[password]"]', 'input[type="password"]', '#sign_in_password'];
-  let passwordSelector = null;
-  for (const sel of passwordSelectors) {
-    if (await page.$(sel) !== null) {
-      passwordSelector = sel;
-      console.log(`Found password field: ${sel}`);
-      break;
-    }
-  }
-  if (!passwordSelector) throw new Error('Could not find password input field');
-  await page.type(emailSelector, PORTAL_USERNAME);
-  await page.type(passwordSelector, PORTAL_PASSWORD);
-  const submitButton = await page.$('button[type="submit"], input[type="submit"], button[name="commit"]');
-  if (!submitButton) throw new Error('Could not find submit button');
-  console.log('Submitting login...');
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: 'networkidle2' }),
-    submitButton.click()
-  ]);
-  if (page.url().includes('session') || page.url().includes('sign_in')) {
-    throw new Error('Login failed - check credentials');
-  }
-  console.log('Login successful');
+ console.log('Navigating to login...');
+ await page.goto('https://partner.distribusion.com/session/new', {
+   waitUntil: 'networkidle2',
+   timeout: 30000
+ });
+
+
+ await page.waitForTimeout(3000);
+
+
+ // Try multiple selectors for email field
+ const emailSelectors = ['#user_email', 'input[name="user[email]"]', 'input[type="email"]', '#sign_in_email'];
+ let emailSelector = null;
+
+
+ for (const sel of emailSelectors) {
+   const exists = await page.$(sel) !== null;
+   if (exists) {
+     emailSelector = sel;
+     console.log(`Found email field: ${sel}`);
+     break;
+   }
+ }
+
+
+ if (!emailSelector) {
+   throw new Error('Could not find email input field');
+ }
+
+
+ // Try multiple selectors for password field
+ const passwordSelectors = ['#user_password', 'input[name="user[password]"]', 'input[type="password"]', '#sign_in_password'];
+ let passwordSelector = null;
+
+
+ for (const sel of passwordSelectors) {
+   const exists = await page.$(sel) !== null;
+   if (exists) {
+     passwordSelector = sel;
+     console.log(`Found password field: ${sel}`);
+     break;
+   }
+ }
+
+
+ if (!passwordSelector) {
+   throw new Error('Could not find password input field');
+ }
+
+
+ // Fill in credentials
+ await page.type(emailSelector, PORTAL_USERNAME);
+ await page.type(passwordSelector, PORTAL_PASSWORD);
+
+
+ // Find and click submit button
+ const submitButton = await page.$('button[type="submit"], input[type="submit"], button[name="commit"]');
+ if (!submitButton) {
+   throw new Error('Could not find submit button');
+ }
+
+
+ console.log('Submitting login...');
+ await Promise.all([
+   page.waitForNavigation({ waitUntil: 'networkidle2' }),
+   submitButton.click()
+ ]);
+
+
+ // Check if login was successful
+ if (page.url().includes('session') || page.url().includes('sign_in')) {
+   throw new Error('Login failed - check credentials');
+ }
+
+
+ console.log('Login successful');
 };
 
-// === API ROUTES ===
 
 app.get('/', (req, res) => {
-  res.json({
-    status: 'Partner onboarding API running',
-    hasCredentials: !!(PORTAL_USERNAME && PORTAL_PASSWORD)
-  });
+ res.json({
+   status: 'Partner onboarding API running',
+   hasCredentials: !!(PORTAL_USERNAME && PORTAL_PASSWORD)
+ });
 });
+
 
 // CARRIER GROUP CREATION
 app.post('/api/carrier_groups', async (req, res) => {
@@ -205,113 +230,140 @@ app.post('/api/carrier_groups', async (req, res) => {
 
 // PROVIDER CREATION
 app.post('/api/providers', async (req, res) => {
-  const data = req.body;
-  if (!PORTAL_USERNAME || !PORTAL_PASSWORD) {
-    return res.status(400).json({ success: false, error: 'Missing portal credentials' });
-  }
+ const data = req.body;
 
-  let browser;
-  try {
-    browser = await puppeteer.launch({
-      headless: 'new',
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-    });
 
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1366, height: 768 });
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-    await loginToPortal(page);
-    console.log('Going to provider form...');
-    await page.goto('https://partner.distribusion.com/providers/new?locale=en', { waitUntil: 'networkidle2', timeout: 60000 });
-    console.log('Filling provider form section by section...');
+ if (!PORTAL_USERNAME || !PORTAL_PASSWORD) {
+   return res.status(400).json({
+     success: false,
+     error: 'Missing portal credentials'
+   });
+ }
 
-    // === SECTION: BASIC & LEGAL INFORMATION ===
-    await page.type('#provider_display_name', String(data.provider_display_name || ''));
-    await page.select('#provider_group_id', String(data.provider_group_id || ''));
-    if (data.provider_revenue_stream_type) await selectByText(page, '#provider_revenue_stream_id', data.provider_revenue_stream_type);
-    if (data.provider_status) await selectByText(page, '#provider_status_id', data.provider_status);
-    if (data.provider_carrier_type) await selectByText(page, '#provider_carrier_type_id', data.provider_carrier_type);
-    await page.type('#provider_legal_name', String(data.provider_legal_name || ''));
-    await page.type('#provider_address', String(data.provider_address || ''));
-    if (data.provider_country_code) await page.select('#provider_country_code', data.provider_country_code);
-    await page.type('#provider_email', String(data.provider_email || ''));
-    await page.type('#provider_vat_no', String(data.provider_vat_no || ''));
-    await page.type('#provider_iban', String(data.provider_iban || ''));
-    await page.type('#provider_bic', String(data.provider_bic || ''));
-    await page.type('#provider_authorised_representative', String(data.provider_authorised_representative || ''));
-    
-    // === SECTION: CONTACTS ===
-    console.log('Filling Contacts section...');
-    // The key fix: Wait for the section to appear before trying to fill it.
-    await page.waitForSelector('#provider_contacts_attributes_0_first_name', { visible: true, timeout: 15000 });
 
-    await selectByText(page, '#provider_contacts_attributes_0_contact_type', 'Business');
-    await typeIfExists(page, '#provider_contacts_attributes_0_first_name', data.provider_business_contact_first_name);
-    await typeIfExists(page, '#provider_contacts_attributes_0_last_name',  data.provider_business_contact_last_name);
-    await typeIfExists(page, '#provider_contacts_attributes_0_email',      data.provider_business_contact_email);
-    
-    await selectByText(page, '#provider_contacts_attributes_1_contact_type', 'Technical');
-    await typeIfExists(page, '#provider_contacts_attributes_1_first_name', data.provider_technical_contact_first_name);
-    await typeIfExists(page, '#provider_contacts_attributes_1_last_name',  data.provider_technical_contact_last_name);
-    await typeIfExists(page, '#provider_contacts_attributes_1_email',      data.provider_technical_contact_email);
+ let browser;
+ try {
+   browser = await puppeteer.launch({
+     headless: 'new',
+     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+     args: [
+       '--no-sandbox',
+       '--disable-setuid-sandbox',
+       '--disable-dev-shm-usage'
+     ]
+   });
 
-    // === SECTION: DT CONTACT ===
-    console.log('Filling DT Contacts section...');
-    await typeIfExists(page, '#provider_contact_person', data.provider_contact_person);
-    await typeIfExists(page, '#provider_contact_distribusion_account_manager', data.provider_contact_distribusion_account_manager);
 
-    // === SECTION: CONTRACT DETAILS ===
-    console.log('Filling Contract Details section...');
-    await typeIfExists(page, '#provider_contracts_attributes_0_effective_date', data.provider_contracts_attributes_effective_date);
-    await typeIfExists(page, '#provider_contracts_attributes_0_duration', data.provider_contracts_attributes_duration);
-    await typeIfExists(page, '#provider_contracts_attributes_0_termination_notice', data.provider_contracts_attributes_termination_notice);
-    await typeIfExists(page, '#provider_contracts_attributes_0_deposit_amount', data.provider_contracts_attributes_deposit_amount);
-    await typeIfExists(page, '#provider_contracts_attributes_0_contract_directory_url', data.provider_contracts_attributes_contract_directory_url);
-    if (data.provider_contracts_attributes_checked_by_legal === 'yes') {
-        try { await page.click('#provider_contracts_attributes_0_checked_by_legal'); }
-        catch(e) { console.warn('Could not click "checked by legal" checkbox.'); }
-    }
-    if (data.provider_contracts_attributes_invoicing_entity) await selectByText(page, '#provider_contracts_attributes_0_invoicing_entity_id', data.provider_contracts_attributes_invoicing_entity);
+   const page = await browser.newPage();
+   await page.setViewport({ width: 1366, height: 768 });
 
-    // === SECTION: INVOICE & COMMISSIONS ===
-    console.log('Filling Invoice/Commissions section...');
-    if (data.provider_currency_id) await selectByText(page, '#provider_currency_id', data.provider_currency_id);
-    if (data.provider_invoicing_type) await selectByText(page, '#provider_invoicing_type_id', data.provider_invoicing_type);
-    await typeIfExists(page, '#provider_email_for_invoicing', data.provider_email_for_invoicing);
-    if (data.provider_invoicing_cadence) await selectByText(page, '#provider_invoicing_cadence', data.provider_invoicing_cadence);
-    await typeIfExists(page, '#provider_commission_affiliate_in_percent', data.provider_commission_rate_for_affiliate_partners);
-    await typeIfExists(page, '#provider_commission_stationary_in_percent', data.provider_commission_rate_for_stationary_agencies);
-    await typeIfExists(page, '#provider_commission_online_in_percent', data.provider_commission_rate_for_online_agencies);
-    await typeIfExists(page, '#provider_commission_white_label_in_percent', data.provider_commission_rate_for_ota_white_labels);
-    await typeIfExists(page, '#provider_commission_point_of_sale_in_percent', data.provider_commission_rate_for_points_of_sale);
-    await typeIfExists(page, '#provider_booking_transaction_fee_in_percent', data.provider_booking_transaction_fee_in_percent);
-    await typeIfExists(page, '#provider_transaction_fee_in_cents', data.provider_transaction_fee_in_cents);
-    await typeIfExists(page, '#provider_ancillary_transaction_fee_fixed_in_cents', data.provider_ancillary_transaction_fee_fixed_in_cents);
-    await typeIfExists(page, '#provider_ancillary_transaction_fee_in_percent', data.provider_ancillary_transaction_fee_in_percent);
-    await typeIfExists(page, '#provider_vat_rate_for_invoicing', data.provider_vat_rate_for_invoicing);
-    await typeIfExists(page, '#provider_payment_fee_owl', data.provider_payment_fee_owl);
 
-    console.log('Submitting provider form...');
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'networkidle2' }),
-      page.click('form#new_provider button[type="submit"]')
-    ]);
+   // Login
+   await loginToPortal(page);
 
-    const providerUrl = page.url();
-    console.log('Provider created:', providerUrl);
-    res.json({ success: true, providerUrl: providerUrl });
 
-  } catch (error) {
-    console.error('Error:', error.message);
-    res.status(500).json({ success: false, error: error.message });
-  } finally {
-    if (browser) await browser.close();
-  }
+   // Navigate to provider creation
+   console.log('Going to provider form...');
+   await page.goto('https://partner.distribusion.com/providers/new?locale=en', {
+     waitUntil: 'networkidle2',
+     timeout: 60000
+   });
+
+
+   console.log('Filling provider form...');
+
+
+   // BASIC INFORMATION
+   await page.type('#provider_display_name', String(data.provider_display_name || ''));
+   await page.select('#provider_group_id', String(data.provider_group_id || ''));
+
+
+   if (data.provider_revenue_stream_type) {
+     await selectByText(page, '#provider_revenue_stream_id', data.provider_revenue_stream_type);
+   }
+
+
+   if (data.provider_status) {
+     await selectByText(page, '#provider_status_id', data.provider_status);
+   }
+
+
+   if (data.provider_carrier_type) {
+     await selectByText(page, '#provider_carrier_type_id', data.provider_carrier_type);
+   }
+
+
+   // LEGAL INFORMATION
+   await page.type('#provider_legal_name', String(data.provider_legal_name || ''));
+   await page.type('#provider_address', String(data.provider_address || ''));
+
+
+   if (data.provider_country_code) {
+     await page.select('#provider_country_code', data.provider_country_code);
+   }
+
+
+   await page.type('#provider_email', String(data.provider_email || ''));
+   await page.type('#provider_vat_no', String(data.provider_vat_no || ''));
+   await page.type('#provider_iban', String(data.provider_iban || ''));
+   await page.type('#provider_bic', String(data.provider_bic || ''));
+   await page.type('#provider_authorised_representative', String(data.provider_authorised_representative || ''));
+
+
+   // CONTRACT DETAILS
+   await page.type('#provider_contracts_attributes_0_effective_date', String(data.provider_contracts_attributes_0_effective_date || ''));
+   await page.type('#provider_contracts_attributes_0_duration', String(data.provider_contracts_attributes_0_duration || '3 years'));
+   await page.type('#provider_contracts_attributes_0_termination_notice', String(data.provider_contracts_attributes_0_termination_notice || '6 months'));
+   await page.type('#provider_contracts_attributes_0_deposit_amount', String(data.provider_contracts_attributes_0_deposit_amount || '0'));
+
+
+   // COMMISSIONS & FEES
+   await page.type('#provider_commission_affiliate_in_percent', String(data.provider_commission_rate_for_affiliate_partners || '0'));
+   await page.type('#provider_commission_stationary_in_percent', String(data.provider_commission_rate_for_stationary_agencies || '0'));
+   await page.type('#provider_commission_online_in_percent', String(data.provider_commission_rate_for_online_agencies || '0'));
+   await page.type('#provider_commission_white_label_in_percent', String(data.provider_commission_rate_for_ota_white_labels || '0'));
+   await page.type('#provider_commission_point_of_sale_in_percent', String(data.provider_commission_rate_for_points_of_sale || '0'));
+
+
+   await page.type('#provider_booking_transaction_fee_in_percent', String(data.provider_booking_transaction_fee_in_percent || '0'));
+   await page.type('#provider_ancillary_transaction_fee_in_percent', String(data.provider_ancillary_transaction_fee_in_percent || '0'));
+   await page.type('#provider_payment_fee_owl', String(data.provider_payment_fee_owl || '0'));
+
+
+   console.log('Submitting provider form...');
+
+
+   // Submit
+   await Promise.all([
+     page.waitForNavigation({ waitUntil: 'networkidle2' }),
+     page.click('form#new_provider button[type="submit"]')
+   ]);
+
+
+   const providerUrl = page.url();
+   console.log('Provider created:', providerUrl);
+
+
+   res.json({
+     success: true,
+     providerUrl: providerUrl
+   });
+
+
+ } catch (error) {
+   console.error('Error:', error.message);
+   res.status(500).json({
+     success: false,
+     error: error.message
+   });
+ } finally {
+   if (browser) await browser.close();
+ }
 });
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log('Credentials loaded:', !!(PORTAL_USERNAME && PORTAL_PASSWORD));
+ console.log(`Server running on port ${PORT}`);
+ console.log('Credentials loaded:', !!(PORTAL_USERNAME && PORTAL_PASSWORD));
 });
