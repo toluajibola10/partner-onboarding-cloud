@@ -127,16 +127,38 @@ app.post('/api/carrier_groups', async (req, res) => {
       page.click('form#new_carrier_group button.btn-success')
     ]);
 
-    // Fixed ID Extraction Logic
-    console.log('Looking for success message to extract Group ID...');
-    const successSelector = '.alert-success, .flash-notice, .notice';
-    await page.waitForSelector(successSelector, { timeout: 10000 });
-    
-    const successText = await page.$eval(successSelector, el => el.textContent);
-    const idMatch = successText.match(/(\d+)/); // Find the first number in the message
-    const groupId = idMatch ? idMatch[1] : null;
+    // ✅ START: NEW ROBUST ID EXTRACTION LOGIC
+    await page.waitForTimeout(1500); // Give page a moment to settle any client-side redirects
 
-    const carrierGroupUrl = groupId ? `https://partner.distribusion.com/carrier_groups/${groupId}` : page.url();
+    let groupId = null;
+    const finalUrl = page.url();
+    console.log(`Landed on URL: ${finalUrl}`);
+
+    // Method 1: Try to get ID from the URL (best case)
+    const urlMatch = finalUrl.match(/carrier_groups\/(\d+)/);
+    if (urlMatch && urlMatch[1]) {
+      groupId = urlMatch[1];
+      console.log(`Extracted groupId '${groupId}' from URL.`);
+    } else {
+      // Method 2 (Fallback): Look for a success message on the page
+      console.log('Could not find ID in URL, looking for success message...');
+      try {
+        const successSelector = '.alert-success, .flash-notice, .notice';
+        // Wait for max 5 seconds, don't crash if not found
+        const successText = await page.$eval(successSelector, el => el.textContent, { timeout: 5000 });
+        const idMatch = successText.match(/(\d+)/);
+        if (idMatch && idMatch[1]) {
+          groupId = idMatch[1];
+          console.log(`Extracted groupId '${groupId}' from success message.`);
+        }
+      } catch (e) {
+        console.log('No success message containing an ID was found.');
+      }
+    }
+    
+    const carrierGroupUrl = groupId ? `https://partner.distribusion.com/carrier_groups/${groupId}` : finalUrl;
+    // ✅ END: NEW ROBUST ID EXTRACTION LOGIC
+    
     console.log('Carrier group URL:', carrierGroupUrl);
     res.json({ success: true, groupId: groupId, carrierGroupUrl: carrierGroupUrl });
 
@@ -180,7 +202,6 @@ app.post('/api/providers', async (req, res) => {
     if (data.provider_revenue_stream_type) await selectByText(page, '#provider_revenue_stream_id', data.provider_revenue_stream_type);
     if (data.provider_status) await selectByText(page, '#provider_status_id', data.provider_status);
     if (data.provider_carrier_type) await selectByText(page, '#provider_carrier_type_id', data.provider_carrier_type);
-    
     await page.type('#provider_legal_name', String(data.provider_legal_name || ''));
     await page.type('#provider_address', String(data.provider_address || ''));
     if (data.provider_country_code) await page.select('#provider_country_code', data.provider_country_code);
@@ -228,13 +249,11 @@ app.post('/api/providers', async (req, res) => {
     if (data.provider_invoicing_type) await selectByText(page, '#provider_invoicing_type_id', data.provider_invoicing_type);
     await page.type('#provider_email_for_invoicing', String(data.provider_email_for_invoicing || ''));
     if (data.provider_invoicing_cadence) await selectByText(page, '#provider_invoicing_cadence', data.provider_invoicing_cadence);
-    
     await page.type('#provider_commission_affiliate_in_percent', String(data.provider_commission_rate_for_affiliate_partners || '0'));
     await page.type('#provider_commission_stationary_in_percent', String(data.provider_commission_rate_for_stationary_agencies || '0'));
     await page.type('#provider_commission_online_in_percent', String(data.provider_commission_rate_for_online_agencies || '0'));
     await page.type('#provider_commission_white_label_in_percent', String(data.provider_commission_rate_for_ota_white_labels || '0'));
     await page.type('#provider_commission_point_of_sale_in_percent', String(data.provider_commission_rate_for_points_of_sale || '0'));
-
     await page.type('#provider_booking_transaction_fee_in_percent', String(data.provider_booking_transaction_fee_in_percent || '0'));
     await page.type('#provider_transaction_fee_in_cents', String(data.provider_transaction_fee_in_cents || '0'));
     await page.type('#provider_ancillary_transaction_fee_fixed_in_cents', String(data.provider_ancillary_transaction_fee_fixed_in_cents || '0'));
