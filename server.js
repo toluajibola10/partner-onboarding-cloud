@@ -132,174 +132,142 @@ app.post('/api/carrier_groups', async (req, res) => {
   } finally { if (browser) await browser.close(); }
 });
 
-/* ── provider route ──────────────────────────────────────────────── */
+// PROVIDER CREATION
 app.post('/api/providers', async (req, res) => {
-  if (!PORTAL_USER || !PORTAL_PASS)
-    return res.status(400).json({ success:false, error:'Missing credentials' });
+  const data = req.body;
+  if (!PORTAL_USERNAME || !PORTAL_PASSWORD) {
+    return res.status(400).json({ success: false, error: 'Missing portal credentials' });
+  }
 
   let browser;
   try {
     browser = await puppeteer.launch({
-      headless:'new',
+      headless: false, // switch to true in production
+      slowMo: 35,
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
-      args:['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage']
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
     });
+
     const page = await browser.newPage();
-    await page.setViewport({ width:1366, height:768 });
+    await page.setViewport({ width: 1366, height: 768 });
 
-    await login(page);
+    await loginToPortal(page);
 
-    /* provider form */
-    await page.goto('https://partner.distribusion.com/providers/new?locale=en',
-                    { waitUntil:'networkidle2', timeout:60000 });
-    await page.waitForSelector('input[name="provider[display_name]"]',
-                               { visible:true, timeout:15000 });
+    console.log('▶️ Navigating to Provider form...');
+    await page.goto('https://partner.distribusion.com/providers/new?locale=en', {
+      waitUntil: 'networkidle2',
+      timeout: 60000
+    });
 
-    const d = req.body;
+    // BASIC INFORMATION
+    console.log('Filling Basic Info...');
+    await page.type('#provider_display_name', data.provider_display_name || '');
+    await page.select('#provider_group_id', data.provider_group_id || '');
+    await selectByText(page, '#provider_revenue_stream_type', data.provider_revenue_stream_type);
+    await selectByText(page, '#provider_status', data.provider_status);
+    await selectByText(page, '#provider_carrier_type', data.provider_carrier_type);
 
-    /* BASIC */
-    await typeIfExists(page, 'input[name="provider[display_name]"]', d.provider_display_name);
-    if (d.provider_group_id) {
-      await page.select('select[name="provider[group_id]"]', d.provider_group_id);
-      /* wait for contacts grid to load after selecting group */
-      await page.waitForSelector('input[name="provider[contacts_attributes][0][first_name]"]',
-                                 { visible:true, timeout:15000 });
+    // LEGAL
+    console.log('Filling Legal Info...');
+    await page.type('#provider_legal_name', data.provider_legal_name || '');
+    await page.type('#provider_address', data.provider_address || '');
+    await page.select('#provider_country_code', data.provider_country_code || '');
+    await typeIfExists(page, '#provider_phone_number', data.provider_phone_number);
+    await page.type('#provider_email', data.provider_email || '');
+    await typeIfExists(page, '#provider_commercial_register_number', data.provider_commercial_register_number);
+    await page.type('#provider_vat_no', data.provider_vat_no || '');
+    await page.type('#provider_iban', data.provider_iban || '');
+    await page.type('#provider_bic', data.provider_bic || '');
+    await page.type('#provider_authorised_representative', data.provider_authorised_representative || '');
+
+    // WAIT FOR CONTACT FIELDS TO LOAD
+    console.log('Waiting for contact fields...');
+    await page.waitForSelector('#provider_contacts_attributes_0_first_name', { timeout: 7000 });
+
+    // CONTACTS SECTION
+    console.log('Filling Contact Info...');
+    // 🟦 Business Contact (Contact #1)
+await selectByText(page, '#contact_contact_type_1', 'Business');
+await typeIfExists(page, '#contact_first_name_1', data.provider_business_contact_first_name);
+await typeIfExists(page, '#contact_last_name_1', data.provider_business_contact_last_name);
+await typeIfExists(page, '#contact_email_1', data.provider_business_contact_email);
+
+// 🟪 Technical Contact (Contact #2)
+await selectByText(page, '#contact_contact_type_2', 'Technical');
+await typeIfExists(page, '#contact_first_name_2', data.provider_technical_contact_first_name);
+await typeIfExists(page, '#contact_last_name_2', data.provider_technical_contact_last_name);
+await typeIfExists(page, '#contact_email_2', data.provider_technical_contact_email);
+
+
+    // DISTRIBUSION CONTACT SECTION
+    console.log('Filling DT Contact Info...');
+    await typeIfExists(page, '#provider_contact_person', data.provider_contact_person);
+    await typeIfExists(page, '#provider_contact_distribusion_account_manager', data.provider_contact_distribusion_account_manager);
+
+    // CONTRACT SECTION
+    console.log('Filling Contract Info...');
+    await typeIfExists(page, '#provider_contract_attributes_effective_date', data.provider_contracts_attributes_effective_date);
+    await typeIfExists(page, '#provider_contract_attributes_duration', data.provider_contracts_attributes_duration || '3 years');
+    await typeIfExists(page, '#provider_contract_attributes_termination_notice', data.provider_contracts_attributes_termination_notice || '6 months');
+    await typeIfExists(page, '#provider_contract_attributes_deposit_amount', String(data.provider_contracts_attributes_deposit_amount || '0'));
+    await typeIfExists(page, '#provider_contract_attributes_contract_directory_url', data.provider_contracts_attributes_contract_directory_url);
+
+    if (data.provider_contracts_attributes_checked_by_legal === 'yes') {
+      const checkbox = await page.$('#provider_contracts_attributes_checked_by_legal');
+      if (checkbox) await checkbox.click();
     }
-    await selectByText(page,'select[name="provider[revenue_stream_id]"]', d.provider_revenue_stream_type);
-    await selectByText(page,'select[name="provider[status_id]"]',         d.provider_status);
-    await selectByText(page,'select[name="provider[carrier_type_id]"]',   d.provider_carrier_type);
 
-    /* LEGAL */
-    await typeIfExists(page,'input[name="provider[legal_name]"]',            d.provider_legal_name);
-    await typeIfExists(page,'input[name="provider[address]"]',               d.provider_address);
-    if (d.provider_country_code)
-      await page.select('select[name="provider[country_code]"]', d.provider_country_code);
-    await typeIfExists(page,'input[name="provider[email]"]',                 d.provider_email);
-    await typeIfExists(page,'input[name="provider[vat_no]"]',                d.provider_vat_no);
-    await typeIfExists(page,'input[name="provider[iban]"]',                  d.provider_iban);
-    await typeIfExists(page,'input[name="provider[bic]"]',                   d.provider_bic);
-    await typeIfExists(page,'input[name="provider[authorised_representative]"]',
-                       d.provider_authorised_representative);
-
-    /* CONTACTS ─ business row (index 0) */
-    await selectByText(page,
-      'select[name="provider[contacts_attributes][0][contact_type]"]', 'Business');
-    await typeIfExists(page,'input[name="provider[contacts_attributes][0][first_name]"]',
-                       d.provider_business_contact_first_name);
-    await typeIfExists(page,'input[name="provider[contacts_attributes][0][last_name]"]',
-                       d.provider_business_contact_last_name);
-    await typeIfExists(page,'input[name="provider[contacts_attributes][0][email]"]',
-                       d.provider_business_contact_email);
-
-    /* CONTACTS ─ technical row (index 1) */
-    if (d.provider_technical_contact_first_name) {
-      const add = await page.$('.add_nested_fields, a[data-association="contacts"]');
-      if (add) {
-        await add.click();
-        await page.waitForSelector(
-          'input[name="provider[contacts_attributes][1][first_name]"]',
-          { visible:true, timeout:10000 });
-      }
-      await selectByText(page,
-        'select[name="provider[contacts_attributes][1][contact_type]"]', 'Technical');
-      await typeIfExists(page,'input[name="provider[contacts_attributes][1][first_name]"]',
-                         d.provider_technical_contact_first_name);
-      await typeIfExists(page,'input[name="provider[contacts_attributes][1][last_name]"]',
-                         d.provider_technical_contact_last_name);
-      await typeIfExists(page,'input[name="provider[contacts_attributes][1][email]"]',
-                         d.provider_technical_contact_email);
+    if (data.provider_contracts_attributes_invoicing_entity) {
+      await selectByText(page, '#provider_contracts_attributes_invoicing_entity', data.provider_contracts_attributes_invoicing_entity);
     }
 
-    /* DT CONTACT */
-    await typeIfExists(page,'input[name="provider[contact_person]"]',
-                       d.provider_contact_person);
-    await typeIfExists(page,'input[name="provider[distribusion_account_manager]"]',
-                       d.provider_contact_distribusion_account_manager);
-
-    /* CONTRACT – wait for contract panel */
-    await page.waitForSelector(
-      'input[name="provider[contracts_attributes][0][effective_date]"]',
-      { visible:true, timeout:15000 });
-    await typeIfExists(page,'input[name="provider[contracts_attributes][0][effective_date]"]',
-                       d.provider_contracts_attributes_effective_date);
-    await typeIfExists(page,'input[name="provider[contracts_attributes][0][duration]"]',
-                       d.provider_contracts_attributes_duration || '3 years');
-    await typeIfExists(page,'input[name="provider[contracts_attributes][0][termination_notice]"]',
-                       d.provider_contracts_attributes_termination_notice || '6 months');
-    await typeIfExists(page,'input[name="provider[contracts_attributes][0][deposit_amount]"]',
-                       d.provider_contracts_attributes_deposit_amount);
-    await typeIfExists(page,'input[name="provider[contracts_attributes][0][contract_directory_url]"]',
-                       d.provider_contracts_attributes_contract_directory_url);
-    if (d.provider_contracts_attributes_checked_by_legal === 'yes') {
-      const cb = await page.$('input[name="provider[contracts_attributes][0][checked_by_legal]"]');
-      if (cb) await cb.click();
+    // INVOICE INFO
+    console.log('Filling Invoicing Info...');
+    if (data.provider_currency_id) {
+      await selectByText(page, '#provider_currency_id', data.provider_currency_id);
     }
-    await selectByText(page,
-      'select[name="provider[contracts_attributes][0][invoicing_entity_id]"]',
-      d.provider_contracts_attributes_invoicing_entity);
+    if (data.provider_invoicing_type) {
+      await selectByText(page, '#provider_invoicing_type_id', data.provider_invoicing_type);
+    }
+    await typeIfExists(page, '#provider_email_for_invoicing', data.provider_email_for_invoicing);
+    await selectByText(page, '#provider_invoicing_cadence', data.provider_invoicing_cadence);
 
-    /* INVOICE */
-    await selectByText(page,'select[name="provider[currency_id]"]',      d.provider_currency_id);
-    await selectByText(page,'select[name="provider[invoicing_type_id]"]',d.provider_invoicing_type);
-    await typeIfExists(page,'input[name="provider[email_for_invoicing]"]',
-                       d.provider_email_for_invoicing);
-    await selectByText(page,'select[name="provider[invoicing_cadence]"]',
-                       d.provider_invoicing_cadence);
+    // COMMISSION & FEES
+    console.log('Filling Commission Info...');
+    await typeIfExists(page, '#provider_commission_rate_for_affiliate_partner', data.provider_commission_rate_for_affiliate_partners);
+    await typeIfExists(page, '#provider_commission_rate_for_stationary_agencies', data.provider_commission_rate_for_stationary_agencies);
+    await typeIfExists(page, '#provider_commission_rate_for_online_agencies', data.provider_commission_rate_for_online_agencies);
+    await typeIfExists(page, '#provider_commission_rate_for_ota_white_labels', data.provider_commission_rate_for_ota_white_labels);
+    await typeIfExists(page, '#provider_commission_rate_for_points_of_sale', data.provider_commission_rate_for_points_of_sale);
+    await typeIfExists(page, '#provider_booking_transaction_fee_in_percent', data.provider_booking_transaction_fee_in_percent);
+    await typeIfExists(page, '#provider_transaction_fee_in_cents', data.provider_transaction_fee_in_cents);
+    await typeIfExists(page, '#provider_ancillary_transaction_fee_fixed_in_cents', data.provider_ancillary_transaction_fee_fixed_in_cents);
+    await typeIfExists(page, '#provider_ancillary_transaction_fee_in_percent', data.provider_ancillary_transaction_fee_in_percent);
+    await typeIfExists(page, '#provider_vat_rate_for_invoicing', data.provider_vat_rate_for_invoicing);
+    await typeIfExists(page, '#provider_payment_fee_owl', data.provider_payment_fee_owl);
 
-    /* COMMISSIONS & FEES */
-    await typeIfExists(page,'input[name="provider[commission_affiliate_in_percent]"]',
-                       d.provider_commission_rate_for_affiliate_partners);
-    await typeIfExists(page,'input[name="provider[commission_stationary_in_percent]"]',
-                       d.provider_commission_rate_for_stationary_agencies);
-    await typeIfExists(page,'input[name="provider[commission_online_in_percent]"]',
-                       d.provider_commission_rate_for_online_agencies);
-    await typeIfExists(page,'input[name="provider[commission_white_label_in_percent]"]',
-                       d.provider_commission_rate_for_ota_white_labels);
-    await typeIfExists(page,'input[name="provider[commission_point_of_sale_in_percent]"]',
-                       d.provider_commission_rate_for_points_of_sale);
-
-    await typeIfExists(page,'input[name="provider[booking_transaction_fee_in_percent]"]',
-                       d.provider_booking_transaction_fee_in_percent);
-    await typeIfExists(page,'input[name="provider[transaction_fee_in_cents]"]',
-                       d.provider_transaction_fee_in_cents);
-    await typeIfExists(page,'input[name="provider[ancillary_transaction_fee_fixed_in_cents]"]',
-                       d.provider_ancillary_transaction_fee_fixed_in_cents);
-    await typeIfExists(page,'input[name="provider[ancillary_transaction_fee_in_percent]"]',
-                       d.provider_ancillary_transaction_fee_in_percent);
-
-    await typeIfExists(page,'input[name="provider[vat_rate_for_invoicing]"]',
-                       d.provider_vat_rate_for_invoicing);
-    await typeIfExists(page,'input[name="provider[payment_fee_owl]"]',
-                       d.provider_payment_fee_owl);
-
-    /* SUBMIT & error capture */
+    // SUBMIT
+    console.log('▶️ Submitting form...');
     await Promise.all([
-      page.waitForNavigation({ waitUntil:'networkidle2' }),
+      page.waitForNavigation({ waitUntil: 'networkidle2' }),
       page.click('form#new_provider button[type="submit"]')
     ]);
 
-    if (page.url().includes('/providers/new')) {
-      const errors = await page.$$eval('.alert, .error', els =>
-        els.map(e=>e.textContent.trim()).filter(Boolean));
-      return res.status(422).json({ success:false, errors });
+    const providerUrl = page.url();
+    const providerIdMatch = providerUrl.match(/providers\/(\d+)/);
+    const providerId = providerIdMatch ? providerIdMatch[1] : null;
+
+    console.log('✅ Provider created:', providerUrl);
+    res.json({ success: true, providerId, providerUrl });
+
+  } catch (error) {
+    console.error('❌ ERROR:', error.message);
+    if (browser) {
+      const pages = await browser.pages();
+      await pages[0].screenshot({ path: 'provider_creation_error.png', fullPage: true });
     }
-
-    const providerId = page.url().match(/providers\/(\d+)/)?.[1] || null;
-    res.json({ success:true, providerId, providerUrl:page.url() });
-  } catch (e) {
-    res.status(500).json({ success:false, error:e.message });
-  } finally { if (browser) await browser.close(); }
+    res.status(500).json({ success: false, error: error.message });
+  } finally {
+    if (browser) await browser.close();
+  }
 });
-
-/* ── health check ───────────────────────────────────────────────── */
-app.get('/', (_req, res) => {
-  res.json({ status:'running', credentialsLoaded:!!(PORTAL_USER && PORTAL_PASS) });
-});
-
-/* ── start ─────────────────────────────────────────────────────── */
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`API listening on ${PORT}`);
-  console.log('Credentials loaded:', !!(PORTAL_USER && PORTAL_PASS));
-});
-/* ──────────────────────────────────────────────────────────────── */
