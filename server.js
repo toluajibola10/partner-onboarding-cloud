@@ -13,17 +13,22 @@ const PORTAL_PASSWORD = process.env.PORTAL_PASSWORD;
 
 const selectByText = async (page, selector, text) => {
   if (!text) return;
-  const optionValue = await page.evaluate((sel, txt) => {
-    const select = document.querySelector(sel);
-    if (!select) return null;
-    const option = Array.from(select.options).find(opt =>
-      opt.textContent.toLowerCase().includes(txt.toLowerCase())
-    );
-    return option?.value;
-  }, selector, text);
+  try {
+    await page.waitForSelector(selector, { visible: true, timeout: 3000 });
+    const optionValue = await page.evaluate((sel, txt) => {
+      const select = document.querySelector(sel);
+      if (!select) return null;
+      const option = Array.from(select.options).find(opt =>
+        opt.textContent.toLowerCase().includes(txt.toLowerCase())
+      );
+      return option?.value;
+    }, selector, text);
 
-  if (optionValue) {
-    await page.select(selector, optionValue);
+    if (optionValue) {
+      await page.select(selector, optionValue);
+    }
+  } catch (error) {
+    console.warn(`Could not find selector "${selector}" for selection, skipping.`);
   }
 };
 
@@ -36,18 +41,6 @@ const typeIfExists = async (page, selector, text) => {
     console.warn(`Could not find selector "${selector}", skipping type operation.`);
   }
 };
-
-// New resilient helper for select dropdowns
-const selectByTextIfExists = async (page, selector, text) => {
-  if (!text) return;
-  try {
-    await page.waitForSelector(selector, { visible: true, timeout: 3000 });
-    await selectByText(page, selector, text);
-  } catch (error) {
-    console.warn(`Could not find selector "${selector}" for selection, skipping.`);
-  }
-};
-
 
 // === LOGIN LOGIC ===
 
@@ -102,7 +95,7 @@ app.get('/', (req, res) => {
   });
 });
 
-// CARRIER GROUP CREATION
+// CARRIER GROUP CREATION (Your proven version)
 app.post('/api/carrier_groups', async (req, res) => {
   const data = req.body;
   if (!PORTAL_USERNAME || !PORTAL_PASSWORD) {
@@ -122,7 +115,9 @@ app.post('/api/carrier_groups', async (req, res) => {
     await loginToPortal(page);
     console.log('Going to carrier groups form...');
     await page.goto('https://partner.distribusion.com/carrier_groups/new?locale=en', { waitUntil: 'networkidle2' });
-    await page.waitForSelector('#carrier_group_name', { visible: true });
+    if (!(await page.$('#carrier_group_name'))) {
+      throw new Error('Carrier group form not found');
+    }
     console.log('Filling carrier group form...');
     await page.type('#carrier_group_name', String(data.carrier_group_name || ''));
     await page.type('#carrier_group_address', String(data.carrier_group_address || ''));
@@ -139,30 +134,15 @@ app.post('/api/carrier_groups', async (req, res) => {
       page.waitForNavigation({ waitUntil: 'networkidle2' }),
       page.click('form#new_carrier_group button.btn-success')
     ]);
-    
-    // ✅ IMPROVED CARRIER GROUP ID EXTRACTION
-    let groupId = null;
-    const finalUrl = page.url();
-    let groupIdMatch = finalUrl.match(/carrier_groups\/(\d+)/);
-    
-    if (groupIdMatch && groupIdMatch[1]) {
-      groupId = groupIdMatch[1];
-    } else if (finalUrl.includes('/carrier_groups') && !finalUrl.includes('/new')) {
-      console.log('Could not find ID in URL, trying to get ID from list page...');
-      try {
-        const firstLink = await page.$eval('table tbody tr:first-child a[href*="/carrier_groups/"]',
-          el => el.getAttribute('href'));
-        groupIdMatch = firstLink.match(/carrier_groups\/(\d+)/);
-        groupId = groupIdMatch ? groupIdMatch[1] : null;
-      } catch (e) {
-        console.log('Could not extract ID from list page');
-      }
-    }
-    
-    const carrierGroupUrl = groupId ? `https://partner.distribusion.com/carrier_groups/${groupId}?locale=en` : finalUrl;
-    console.log('Carrier group created with ID:', groupId);
-    res.json({ success: true, groupId: groupId, carrierGroupUrl: carrierGroupUrl });
 
+    const url = page.url();
+    const groupIdMatch = url.match(/carrier_groups\/(\d+)/);
+    const groupId = groupIdMatch ? groupIdMatch[1] : null;
+    const carrierGroupUrl = groupId ? `https://partner.distribusion.com/carrier_groups/${groupId}?locale=en` : null;
+
+    console.log('Carrier group created with ID:', groupId);
+    console.log('Carrier group URL:', carrierGroupUrl);
+    res.json({ success: true, groupId: groupId, carrierGroupUrl: carrierGroupUrl });
   } catch (error) {
     console.error('Error:', error.message);
     res.status(500).json({ success: false, error: error.message });
@@ -178,11 +158,6 @@ app.post('/api/providers', async (req, res) => {
     return res.status(400).json({ success: false, error: 'Missing portal credentials' });
   }
 
-  // ✅ IMPROVED: ADDED REQUIRED FIELD VALIDATION
-  if (!data.provider_group_id) {
-    return res.status(400).json({ success: false, error: 'provider_group_id is required' });
-  }
-
   let browser;
   try {
     browser = await puppeteer.launch({
@@ -190,6 +165,7 @@ app.post('/api/providers', async (req, res) => {
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
     });
+
     const page = await browser.newPage();
     await page.setViewport({ width: 1366, height: 768 });
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
@@ -200,7 +176,7 @@ app.post('/api/providers', async (req, res) => {
 
     // === SECTION: BASIC & LEGAL INFORMATION ===
     await page.type('#provider_display_name', String(data.provider_display_name || ''));
-    await page.select('#provider_group_id', String(data.provider_group_id)); // No fallback, as it's validated
+    await page.select('#provider_group_id', String(data.provider_group_id || ''));
     if (data.provider_revenue_stream_type) await selectByText(page, '#provider_revenue_stream_id', data.provider_revenue_stream_type);
     if (data.provider_status) await selectByText(page, '#provider_status_id', data.provider_status);
     if (data.provider_carrier_type) await selectByText(page, '#provider_carrier_type_id', data.provider_carrier_type);
@@ -213,15 +189,17 @@ app.post('/api/providers', async (req, res) => {
     await page.type('#provider_bic', String(data.provider_bic || ''));
     await page.type('#provider_authorised_representative', String(data.provider_authorised_representative || ''));
     
-    // ✅ IMPROVED: USING RESILIENT SELECT HELPER
     // === SECTION: CONTACTS ===
     console.log('Filling Contacts section...');
-    await selectByTextIfExists(page, '#provider_contacts_attributes_0_contact_type', 'Business');
+    // The key fix: Wait for the section to appear before trying to fill it.
+    await page.waitForSelector('#provider_contacts_attributes_0_first_name', { visible: true, timeout: 15000 });
+
+    await selectByText(page, '#provider_contacts_attributes_0_contact_type', 'Business');
     await typeIfExists(page, '#provider_contacts_attributes_0_first_name', data.provider_business_contact_first_name);
     await typeIfExists(page, '#provider_contacts_attributes_0_last_name',  data.provider_business_contact_last_name);
     await typeIfExists(page, '#provider_contacts_attributes_0_email',      data.provider_business_contact_email);
     
-    await selectByTextIfExists(page, '#provider_contacts_attributes_1_contact_type', 'Technical');
+    await selectByText(page, '#provider_contacts_attributes_1_contact_type', 'Technical');
     await typeIfExists(page, '#provider_contacts_attributes_1_first_name', data.provider_technical_contact_first_name);
     await typeIfExists(page, '#provider_contacts_attributes_1_last_name',  data.provider_technical_contact_last_name);
     await typeIfExists(page, '#provider_contacts_attributes_1_email',      data.provider_technical_contact_email);
@@ -239,9 +217,8 @@ app.post('/api/providers', async (req, res) => {
     await typeIfExists(page, '#provider_contracts_attributes_0_deposit_amount', data.provider_contracts_attributes_deposit_amount);
     await typeIfExists(page, '#provider_contracts_attributes_0_contract_directory_url', data.provider_contracts_attributes_contract_directory_url);
     if (data.provider_contracts_attributes_checked_by_legal === 'yes') {
-        try {
-            await page.click('#provider_contracts_attributes_0_checked_by_legal');
-        } catch(e) { console.warn('Could not click "checked by legal" checkbox.'); }
+        try { await page.click('#provider_contracts_attributes_0_checked_by_legal'); }
+        catch(e) { console.warn('Could not click "checked by legal" checkbox.'); }
     }
     if (data.provider_contracts_attributes_invoicing_entity) await selectByText(page, '#provider_contracts_attributes_0_invoicing_entity_id', data.provider_contracts_attributes_invoicing_entity);
 
@@ -269,13 +246,9 @@ app.post('/api/providers', async (req, res) => {
       page.click('form#new_provider button[type="submit"]')
     ]);
 
-    // ✅ IMPROVED: ADDED PROVIDER ID EXTRACTION
     const providerUrl = page.url();
-    const providerIdMatch = providerUrl.match(/providers\/(\d+)/);
-    const providerId = providerIdMatch ? providerIdMatch[1] : null;
-    
-    console.log('Provider created with ID:', providerId);
-    res.json({ success: true, providerId: providerId, providerUrl: providerUrl });
+    console.log('Provider created:', providerUrl);
+    res.json({ success: true, providerUrl: providerUrl });
 
   } catch (error) {
     console.error('Error:', error.message);
