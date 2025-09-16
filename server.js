@@ -172,7 +172,6 @@ app.post('/api/providers', async (req, res) => {
     console.log('Filling provider form...');
 
     // === SECTION: BASIC & LEGAL INFORMATION ===
-    // (This is likely the first visible tab)
     await page.type('#provider_display_name', String(data.provider_display_name || ''));
     await page.select('#provider_group_id', String(data.provider_group_id || ''));
     if (data.provider_revenue_stream_type) await selectByText(page, '#provider_revenue_stream_id', data.provider_revenue_stream_type);
@@ -188,9 +187,29 @@ app.post('/api/providers', async (req, res) => {
     await page.type('#provider_bic', String(data.provider_bic || ''));
     await page.type('#provider_authorised_representative', String(data.provider_authorised_representative || ''));
 
+    // === CLICK TO NEXT SECTION: CONTACTS ===
+    console.log('Switching to Contacts section...');
+    // ⚠️ ACTION REQUIRED: Replace this with the real selector for the "Contacts" tab/link
+    const contactsTabSelector = 'ul.nav-tabs a[href="#contacts"]'; // This is a GUESS!
+    await page.click(contactsTabSelector);
+    await page.waitForSelector('#provider_contacts_attributes_0_first_name', { visible: true });
+    
+    // === SECTION: CONTACTS ===
+    if (data.provider_business_contact_first_name) {
+      await page.type('#provider_contacts_attributes_0_first_name', String(data.provider_business_contact_first_name));
+      await page.type('#provider_contacts_attributes_0_last_name', String(data.provider_business_contact_last_name || ''));
+      await page.type('#provider_contacts_attributes_0_email', String(data.provider_business_contact_email || ''));
+    }
+    if (data.provider_technical_contact_first_name) {
+      const addBtn = await page.$('.add_nested_fields');
+      if (addBtn) await addBtn.click();
+      await page.type('#provider_contacts_attributes_1_first_name', String(data.provider_technical_contact_first_name));
+      await page.type('#provider_contacts_attributes_1_last_name', String(data.provider_technical_contact_last_name || ''));
+      await page.type('#provider_contacts_attributes_1_email', String(data.provider_technical_contact_email || ''));
+    }
+
     // === CLICK TO NEXT SECTION: CONTRACT DETAILS ===
     console.log('Switching to Contract Details section...');
-    // ⚠️ ACTION REQUIRED: Replace this with the real selector for the "Contract" tab/link
     const contractTabSelector = 'ul.nav-tabs a[href="#contract"]'; // This is a GUESS!
     await page.click(contractTabSelector);
     await page.waitForSelector('#provider_contracts_attributes_0_effective_date', { visible: true });
@@ -206,7 +225,6 @@ app.post('/api/providers', async (req, res) => {
 
     // === CLICK TO NEXT SECTION: INVOICE & COMMISSIONS ===
     console.log('Switching to Invoice/Commissions section...');
-    // ⚠️ ACTION REQUIRED: Replace this with the real selector for the "Invoice" or "Commissions" tab/link
     const invoiceTabSelector = 'ul.nav-tabs a[href="#invoice"]'; // This is a GUESS!
     await page.click(invoiceTabSelector);
     await page.waitForSelector('#provider_currency_id', { visible: true });
