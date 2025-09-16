@@ -169,7 +169,7 @@ app.post('/api/providers', async (req, res) => {
     console.log('Going to provider form...');
     await page.goto('https://partner.distribusion.com/providers/new?locale=en', { waitUntil: 'networkidle2', timeout: 60000 });
 
-    console.log('Filling provider form...');
+    console.log('Filling provider form section by section...');
 
     // === SECTION: BASIC & LEGAL INFORMATION ===
     await page.type('#provider_display_name', String(data.provider_display_name || ''));
@@ -186,16 +186,11 @@ app.post('/api/providers', async (req, res) => {
     await page.type('#provider_iban', String(data.provider_iban || ''));
     await page.type('#provider_bic', String(data.provider_bic || ''));
     await page.type('#provider_authorised_representative', String(data.provider_authorised_representative || ''));
-
-    // === CLICK TO NEXT SECTION: CONTACTS ===
-    console.log('Switching to Contacts section...');
-    // ⚠️ ACTION REQUIRED: Replace this with the real selector for the "Contacts" tab/link
-    const contactsTabSelector = 'ul.nav-tabs a[href="#contacts"]'; // This is a GUESS!
-    await page.click(contactsTabSelector);
-    await page.waitForSelector('#provider_contacts_attributes_0_first_name', { visible: true });
     
     // === SECTION: CONTACTS ===
+    console.log('Filling Contacts section...');
     if (data.provider_business_contact_first_name) {
+      if(data.provider_business_contact_type) await selectByText(page, '#provider_contacts_attributes_0_contact_type_id', data.provider_business_contact_type);
       await page.type('#provider_contacts_attributes_0_first_name', String(data.provider_business_contact_first_name));
       await page.type('#provider_contacts_attributes_0_last_name', String(data.provider_business_contact_last_name || ''));
       await page.type('#provider_contacts_attributes_0_email', String(data.provider_business_contact_email || ''));
@@ -203,18 +198,16 @@ app.post('/api/providers', async (req, res) => {
     if (data.provider_technical_contact_first_name) {
       const addBtn = await page.$('.add_nested_fields');
       if (addBtn) await addBtn.click();
+      
+      await page.waitForSelector('#provider_contacts_attributes_1_first_name', { visible: true });
+      if(data.provider_technical_contact_type) await selectByText(page, '#provider_contacts_attributes_1_contact_type_id', data.provider_technical_contact_type);
       await page.type('#provider_contacts_attributes_1_first_name', String(data.provider_technical_contact_first_name));
       await page.type('#provider_contacts_attributes_1_last_name', String(data.provider_technical_contact_last_name || ''));
       await page.type('#provider_contacts_attributes_1_email', String(data.provider_technical_contact_email || ''));
     }
 
-    // === CLICK TO NEXT SECTION: CONTRACT DETAILS ===
-    console.log('Switching to Contract Details section...');
-    const contractTabSelector = 'ul.nav-tabs a[href="#contract"]'; // This is a GUESS!
-    await page.click(contractTabSelector);
-    await page.waitForSelector('#provider_contracts_attributes_0_effective_date', { visible: true });
-    
     // === SECTION: CONTRACT DETAILS ===
+    console.log('Filling Contract Details section...');
     await page.type('#provider_contracts_attributes_0_effective_date', String(data.provider_contracts_attributes_effective_date || ''));
     await page.type('#provider_contracts_attributes_0_duration', String(data.provider_contracts_attributes_duration || '3 years'));
     await page.type('#provider_contracts_attributes_0_termination_notice', String(data.provider_contracts_attributes_termination_notice || '6 months'));
@@ -223,13 +216,8 @@ app.post('/api/providers', async (req, res) => {
     if (data.provider_contracts_attributes_checked_by_legal === 'yes') await page.click('#provider_contracts_attributes_0_checked_by_legal');
     if (data.provider_contracts_attributes_invoicing_entity) await selectByText(page, '#provider_contracts_attributes_0_invoicing_entity_id', data.provider_contracts_attributes_invoicing_entity);
 
-    // === CLICK TO NEXT SECTION: INVOICE & COMMISSIONS ===
-    console.log('Switching to Invoice/Commissions section...');
-    const invoiceTabSelector = 'ul.nav-tabs a[href="#invoice"]'; // This is a GUESS!
-    await page.click(invoiceTabSelector);
-    await page.waitForSelector('#provider_currency_id', { visible: true });
-
     // === SECTION: INVOICE & COMMISSIONS ===
+    console.log('Filling Invoice/Commissions section...');
     if (data.provider_currency_id) await selectByText(page, '#provider_currency_id', data.provider_currency_id);
     if (data.provider_invoicing_type) await selectByText(page, '#provider_invoicing_type_id', data.provider_invoicing_type);
     await page.type('#provider_email_for_invoicing', String(data.provider_email_for_invoicing || ''));
