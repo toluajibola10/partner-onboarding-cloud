@@ -253,20 +253,22 @@ app.post('/api/providers', async (req, res) => {
       await selectByText(page, '#provider_carrier_type_id', data.provider_carrier_type);
     }
     
-    // LEGAL INFORMATION
-    await page.type('#provider_legal_name', data.provider_legal_name || '');
-    await page.type('#provider_address', data.provider_address || '');
-    
-    if (data.provider_country_code) {
-      await page.select('#provider_country_code', data.provider_country_code);
-    }
-    
-    await page.type('#provider_email', data.provider_email || '');
-    await typeIfExists(page, '#provider_commercial_register_number', data.provider_commercial_register_number);
-    await page.type('#provider_vat_no', data.provider_vat_no || '');
-    await page.type('#provider_iban', data.provider_iban || '');
-    await page.type('#provider_bic', data.provider_bic || '');
-    await page.type('#provider_authorised_representative', data.provider_authorised_representative || '');
+  // LEGAL INFORMATION
+await typeIfExists(page, '#provider_legal_name', data.provider_legal_name);
+await typeIfExists(page, '#provider_address', data.provider_address);
+
+if (data.provider_country_code) {
+  await page.select('#provider_country_code', data.provider_country_code);
+  console.log('✓ Selected country code');
+}
+
+await typeIfExists(page, '#provider_phone_number', data.provider_phone_number);
+await typeIfExists(page, '#provider_email', data.provider_email);
+await typeIfExists(page, '#provider_commercial_register_number', data.provider_commercial_register_number);
+await typeIfExists(page, '#provider_vat_no', data.provider_vat_no);
+await typeIfExists(page, '#provider_iban', data.provider_iban);
+await typeIfExists(page, '#provider_bic', data.provider_bic);
+await typeIfExists(page, '#provider_authorised_representative', data.provider_authorised_representative);
     
     // CONTACTS SECTION - Using correct selectors based on inspect
     console.log('Filling Contacts section...');
@@ -311,14 +313,17 @@ app.post('/api/providers', async (req, res) => {
     
     // INVOICE INFORMATION
     console.log('Filling Invoice Information...');
-    const ensureChecked = async sel => {
-      const el = await page.$(sel);
-      if (el && !(await (await el.getProperty('checked')).jsonValue())) await el.click();
-    };
     
-    await ensureChecked('#provider_invoicing_enabled');
-    await ensureChecked('#provider_receives_invoices_from_us');
-    await ensureChecked('#provider_receives_automated_invoicing_email');
+// Check the invoicing checkboxes if they should be checked
+if (data.provider_invoicing_enabled === 'yes' || data.provider_invoicing_enabled === true) {
+  await ensureChecked('#provider_invoicing_enabled');
+}
+if (data.provider_receives_invoices_from_us === 'yes' || data.provider_receives_invoices_from_us === true) {
+  await ensureChecked('#provider_receives_invoices_from_us');
+}
+if (data.provider_receives_automated_invoicing_email === 'yes' || data.provider_receives_automated_invoicing_email === true) {
+  await ensureChecked('#provider_receives_automated_invoicing_email');
+}
 
     if (data.provider_currency_id) {
       await selectByText(page, '#provider_currency_id', data.provider_currency_id);
@@ -343,6 +348,14 @@ app.post('/api/providers', async (req, res) => {
     await typeIfExists(page, '#provider_commission_rate_for_online_agencies', String(data.provider_commission_rate_for_online_agencies || '0'));
     await typeIfExists(page, '#provider_commission_rate_for_ota_white_labels', String(data.provider_commission_rate_for_ota_white_labels || '0'));
     await typeIfExists(page, '#provider_commission_rate_for_points_of_sale', String(data.provider_commission_rate_for_points_of_sale || '0'));
+
+    // Transaction fee type selectors
+if (data.provider_ancillary_transaction_fee_type) {
+  await selectByText(page, '#provider_ancillary_transaction_fee_type', data.provider_ancillary_transaction_fee_type);
+}
+if (data.provider_booking_transaction_fee_type) {
+  await selectByText(page, '#provider_booking_transaction_fee_type', data.provider_booking_transaction_fee_type);
+}
     
     await typeIfExists(page, '#provider_booking_transaction_fee_in_percent', String(data.provider_booking_transaction_fee_in_percent || '0'));
     await typeIfExists(page, '#provider_transaction_fee_in_cents', String(data.provider_transaction_fee_in_cents || '0'));
