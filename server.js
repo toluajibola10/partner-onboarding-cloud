@@ -261,7 +261,6 @@ app.post('/api/providers', async (req, res) => {
       await page.select('#provider_country_code', data.provider_country_code);
     }
     
-    await typeIfExists(page, '#provider_phone_number', data.provider_phone_number);
     await page.type('#provider_email', data.provider_email || '');
     await typeIfExists(page, '#provider_commercial_register_number', data.provider_commercial_register_number);
     await page.type('#provider_vat_no', data.provider_vat_no || '');
@@ -295,19 +294,19 @@ app.post('/api/providers', async (req, res) => {
     
     // CONTRACT DETAILS
     console.log('Filling Contract Details...');
-    await typeIfExists(page, '#provider_contracts_attributes_0_effective_date', data.provider_contracts_attributes_effective_date);
-    await typeIfExists(page, '#provider_contracts_attributes_0_duration', data.provider_contracts_attributes_duration || '3 years');
-    await typeIfExists(page, '#provider_contracts_attributes_0_termination_notice', data.provider_contracts_attributes_termination_notice || '6 months');
-    await typeIfExists(page, '#provider_contracts_attributes_0_deposit_amount', String(data.provider_contracts_attributes_deposit_amount || '0'));
-    await typeIfExists(page, '#provider_contracts_attributes_0_contract_directory_url', data.provider_contracts_attributes_contract_directory_url);
+    await typeIfExists(page, '#provider_contract_attributes_effective_date', data.provider_contracts_attributes_effective_date);
+    await typeIfExists(page, '#provider_contract_attributes_duration', data.provider_contracts_attributes_duration || '3 years');
+    await typeIfExists(page, '#provider_contract_attributes_termination_notice', data.provider_contracts_attributes_termination_notice || '6 months');
+    await typeIfExists(page, '#provider_contract_attributes_deposit_amount', String(data.provider_contracts_attributes_deposit_amount || '0'));
+    await typeIfExists(page, '#provider_contract_attributes_contract_directory_url', data.provider_contracts_attributes_contract_directory_url);
     
     if (data.provider_contracts_attributes_checked_by_legal === 'yes') {
-      const checkbox = await page.$('#provider_contracts_attributes_0_checked_by_legal');
+      const checkbox = await page.$('#provider_contract_attributes_checked_by_legal');
       if (checkbox) await checkbox.click();
     }
     
     if (data.provider_contracts_attributes_invoicing_entity) {
-      await selectByText(page, '#provider_contracts_attributes_0_invoicing_entity_id', data.provider_contracts_attributes_invoicing_entity);
+      await selectByText(page, '#provider_contract_attributes_invoicing_entity_id', data.provider_contracts_attributes_invoicing_entity);
     }
     
     // INVOICE INFORMATION
@@ -320,19 +319,21 @@ app.post('/api/providers', async (req, res) => {
       await selectByText(page, '#provider_invoicing_type_id', data.provider_invoicing_type);
     }
     
+    if (data.provider_email_for_invoicing) {
     await typeIfExists(page, '#provider_email_for_invoicing', data.provider_email_for_invoicing);
-    
+    }
+
     if (data.provider_invoicing_cadence) {
       await selectByText(page, '#provider_invoicing_cadence', data.provider_invoicing_cadence);
     }
     
     // COMMISSIONS & FEES
     console.log('Filling Commissions & Fees...');
-    await typeIfExists(page, '#provider_commission_affiliate_in_percent', String(data.provider_commission_rate_for_affiliate_partners || '0'));
-    await typeIfExists(page, '#provider_commission_stationary_in_percent', String(data.provider_commission_rate_for_stationary_agencies || '0'));
-    await typeIfExists(page, '#provider_commission_online_in_percent', String(data.provider_commission_rate_for_online_agencies || '0'));
-    await typeIfExists(page, '#provider_commission_white_label_in_percent', String(data.provider_commission_rate_for_ota_white_labels || '0'));
-    await typeIfExists(page, '#provider_commission_point_of_sale_in_percent', String(data.provider_commission_rate_for_points_of_sale || '0'));
+    await typeIfExists(page, '#provider_commission_rate_for_affiliates', String(data.provider_commission_rate_for_affiliate_partners || '0'));
+    await typeIfExists(page, '#provider_commission_rate_for_stationary_agencies', String(data.provider_commission_rate_for_stationary_agencies || '0'));
+    await typeIfExists(page, '#provider_commission_rate_for_online_agencies', String(data.provider_commission_rate_for_online_agencies || '0'));
+    await typeIfExists(page, '#provider_commission_rate_for_ota_white_labels', String(data.provider_commission_rate_for_ota_white_labels || '0'));
+    await typeIfExists(page, '#provider_commission_rate_for_points_of_sale', String(data.provider_commission_rate_for_points_of_sale || '0'));
     
     await typeIfExists(page, '#provider_booking_transaction_fee_in_percent', String(data.provider_booking_transaction_fee_in_percent || '0'));
     await typeIfExists(page, '#provider_transaction_fee_in_cents', String(data.provider_transaction_fee_in_cents || '0'));
