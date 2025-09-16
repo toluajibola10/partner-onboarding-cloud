@@ -126,39 +126,40 @@ app.post('/api/carrier_groups', async (req, res) => {
       page.waitForNavigation({ waitUntil: 'networkidle2' }),
       page.click('form#new_carrier_group button.btn-success')
     ]);
-
-    // ✅ START: NEW ROBUST ID EXTRACTION LOGIC
-    await page.waitForTimeout(1500); // Give page a moment to settle any client-side redirects
+    
+    // ✅ START: FINAL, ROBUST ID EXTRACTION LOGIC
+    await page.waitForTimeout(1500); // Wait for any final client-side updates
 
     let groupId = null;
     const finalUrl = page.url();
-    console.log(`Landed on URL: ${finalUrl}`);
+    console.log(`Landed on URL after submission: ${finalUrl}`);
 
-    // Method 1: Try to get ID from the URL (best case)
-    const urlMatch = finalUrl.match(/carrier_groups\/(\d+)/);
+    // Method 1: Try to get ID from the final URL (e.g. /carrier_groups/1234)
+    let urlMatch = finalUrl.match(/carrier_groups\/(\d+)/);
     if (urlMatch && urlMatch[1]) {
-      groupId = urlMatch[1];
-      console.log(`Extracted groupId '${groupId}' from URL.`);
+        groupId = urlMatch[1];
+        console.log(`Extracted groupId '${groupId}' from the page URL.`);
     } else {
-      // Method 2 (Fallback): Look for a success message on the page
-      console.log('Could not find ID in URL, looking for success message...');
-      try {
-        const successSelector = '.alert-success, .flash-notice, .notice';
-        // Wait for max 5 seconds, don't crash if not found
-        const successText = await page.$eval(successSelector, el => el.textContent, { timeout: 5000 });
-        const idMatch = successText.match(/(\d+)/);
-        if (idMatch && idMatch[1]) {
-          groupId = idMatch[1];
-          console.log(`Extracted groupId '${groupId}' from success message.`);
+        // Method 2 (Fallback): If on list page, get ID from the first row in the table
+        console.log('Could not find ID in URL. Assuming redirect to list page and getting ID from the first row.');
+        try {
+            // This selector finds the link in the first row of the main table
+            const firstRowLinkSelector = 'table.table tbody tr:first-child a[href*="/carrier_groups/"]';
+            await page.waitForSelector(firstRowLinkSelector, { timeout: 10000 });
+            const linkHref = await page.$eval(firstRowLinkSelector, el => el.getAttribute('href'));
+            
+            urlMatch = linkHref.match(/carrier_groups\/(\d+)/);
+            if (urlMatch && urlMatch[1]) {
+                groupId = urlMatch[1];
+                console.log(`Extracted groupId '${groupId}' from the first row of the list.`);
+            }
+        } catch (e) {
+            console.warn('Could not extract ID from the first row of the list. Proceeding without ID.');
         }
-      } catch (e) {
-        console.log('No success message containing an ID was found.');
-      }
     }
-    
+    // ✅ END: FINAL ID EXTRACTION LOGIC
+
     const carrierGroupUrl = groupId ? `https://partner.distribusion.com/carrier_groups/${groupId}` : finalUrl;
-    // ✅ END: NEW ROBUST ID EXTRACTION LOGIC
-    
     console.log('Carrier group URL:', carrierGroupUrl);
     res.json({ success: true, groupId: groupId, carrierGroupUrl: carrierGroupUrl });
 
