@@ -11,7 +11,10 @@ const PORTAL_PASSWORD = process.env.PORTAL_PASSWORD;
 
 // Helper function to select dropdown by text
 const selectByText = async (page, selector, text) => {
-  if (!text) return;
+  if (!text || text === null || text === undefined) return;
+  
+  text = String(text); // Ensure text is a string
+  
   const optionValue = await page.evaluate((sel, txt) => {
     const select = document.querySelector(sel);
     if (!select) return null;
@@ -36,6 +39,14 @@ const typeIfExists = async (page, selector, text, timeout = 5000) => {
   } catch (error) {
     console.warn(`Could not find selector "${selector}", skipping.`);
   }
+};
+
+// Helper function for safe typing
+const safeType = async (page, selector, value) => {
+  if (value === null || value === undefined) {
+    value = '';
+  }
+  await page.type(selector, String(value));
 };
 
 // Helper function to login
@@ -109,7 +120,7 @@ app.get('/', (req, res) => {
   });
 });
 
-// CARRIER GROUP CREATION (WORKING VERSION)
+// CARRIER GROUP CREATION - FIXED VERSION
 app.post('/api/carrier_groups', async (req, res) => {
   const data = req.body;
   
@@ -144,14 +155,15 @@ app.post('/api/carrier_groups', async (req, res) => {
     });
     
     console.log('Filling carrier group form...');
-    await page.type('#carrier_group_name', data.carrier_group_name || '');
-    await page.type('#carrier_group_address', data.carrier_group_address || '');
-    await page.type('#carrier_group_vat_no', data.carrier_group_vat_no || '');
-    await page.type('#carrier_group_iban', data.carrier_group_iban || '');
-    await page.type('#carrier_group_bic', data.carrier_group_bic || '');
+    
+    await safeType(page, '#carrier_group_name', data.carrier_group_name);
+    await safeType(page, '#carrier_group_address', data.carrier_group_address);
+    await safeType(page, '#carrier_group_vat_no', data.carrier_group_vat_no);
+    await safeType(page, '#carrier_group_iban', data.carrier_group_iban);
+    await safeType(page, '#carrier_group_bic', data.carrier_group_bic);
     
     if (data.carrier_group_country_code) {
-      await page.select('#carrier_group_country_code', data.carrier_group_country_code);
+      await page.select('#carrier_group_country_code', String(data.carrier_group_country_code));
     }
     
     if (data.carrier_group_currency_id) {
@@ -180,6 +192,7 @@ app.post('/api/carrier_groups', async (req, res) => {
     
   } catch (error) {
     console.error('Error:', error.message);
+    console.error('Stack:', error.stack);
     res.status(500).json({
       success: false,
       error: error.message
