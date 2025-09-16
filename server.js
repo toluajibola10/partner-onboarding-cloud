@@ -13,7 +13,7 @@ const PORTAL_PASSWORD = process.env.PORTAL_PASSWORD;
 const selectByText = async (page, selector, text) => {
   if (!text || text === null || text === undefined) return;
   
-  text = String(text); // Ensure text is a string
+  text = String(text);
   
   const optionValue = await page.evaluate((sel, txt) => {
     const select = document.querySelector(sel);
@@ -73,13 +73,14 @@ const loginToPortal = async (page) => {
     'input[type="password"]'
   ];
 
-  // Helper that resolves to the first selector that appears
   const firstVisible = async (list) => {
     for (const sel of list) {
       try {
         await page.waitForSelector(sel, { timeout: 10000, visible: true });
         return sel;
-      } catch { /* try next */ }
+      } catch {
+        // Try next selector
+      }
     }
     return null;
   };
@@ -120,7 +121,7 @@ app.get('/', (req, res) => {
   });
 });
 
-// CARRIER GROUP CREATION - FIXED VERSION
+// CARRIER GROUP CREATION
 app.post('/api/carrier_groups', async (req, res) => {
   const data = req.body;
   
@@ -202,18 +203,21 @@ app.post('/api/carrier_groups', async (req, res) => {
   }
 });
 
-// PROVIDER CREATION - FIXED FOR SERVER ENVIRONMENT
+// PROVIDER CREATION
 app.post('/api/providers', async (req, res) => {
   const data = req.body;
   
   if (!PORTAL_USERNAME || !PORTAL_PASSWORD) {
-    return res.status(400).json({ success: false, error: 'Missing portal credentials' });
+    return res.status(400).json({ 
+      success: false, 
+      error: 'Missing portal credentials' 
+    });
   }
   
   let browser;
   try {
     browser = await puppeteer.launch({
-      headless: 'new',  // Changed from false to 'new' for server compatibility
+      headless: 'new',
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
     });
@@ -229,12 +233,11 @@ app.post('/api/providers', async (req, res) => {
       timeout: 60000
     });
     
-    // Wait for form to load
     await page.waitForTimeout(5000);
     
     console.log('Filling provider form...');
     
-    // === BASIC INFORMATION ===
+    // BASIC INFORMATION
     await page.type('#provider_display_name', data.provider_display_name || '');
     await page.select('#provider_group_id', String(data.provider_group_id || ''));
     
@@ -250,7 +253,7 @@ app.post('/api/providers', async (req, res) => {
       await selectByText(page, '#provider_carrier_type_id', data.provider_carrier_type);
     }
     
-    // === LEGAL INFORMATION ===
+    // LEGAL INFORMATION
     await page.type('#provider_legal_name', data.provider_legal_name || '');
     await page.type('#provider_address', data.provider_address || '');
     
@@ -266,32 +269,31 @@ app.post('/api/providers', async (req, res) => {
     await page.type('#provider_bic', data.provider_bic || '');
     await page.type('#provider_authorised_representative', data.provider_authorised_representative || '');
     
-    // === CONTACTS SECTION ===
-console.log('Filling Contacts section...');
+    // CONTACTS SECTION - Using correct selectors based on inspect
+    console.log('Filling Contacts section...');
+    
+    // Business Contact (Row 1)
+    if (data.provider_business_contact_first_name) {
+      await selectByText(page, '#contact_type_1', 'Business');
+      await typeIfExists(page, '#contact_first_name_1', data.provider_business_contact_first_name);
+      await typeIfExists(page, '#contact_last_name_1', data.provider_business_contact_last_name);
+      await typeIfExists(page, '#contact_email_1', data.provider_business_contact_email);
+    }
+    
+    // Technical Contact (Row 2)
+    if (data.provider_technical_contact_first_name) {
+      await selectByText(page, '#contact_type_2', 'Technical');
+      await typeIfExists(page, '#contact_first_name_2', data.provider_technical_contact_first_name);
+      await typeIfExists(page, '#contact_last_name_2', data.provider_technical_contact_last_name);
+      await typeIfExists(page, '#contact_email_2', data.provider_technical_contact_email);
+    }
 
-// Business Contact (Row 1)
-if (data.provider_business_contact_first_name) {
-  // The contact type dropdown might have a similar pattern
-  await selectByText(page, '#contact_type_1', 'Business');
-  await typeIfExists(page, '#contact_first_name_1', data.provider_business_contact_first_name);
-  await typeIfExists(page, '#contact_last_name_1', data.provider_business_contact_last_name);
-  await typeIfExists(page, '#contact_email_1', data.provider_business_contact_email);
-}
-
-// Technical Contact (Row 2)
-if (data.provider_technical_contact_first_name) {
-  await selectByText(page, '#contact_type_2', 'Technical');
-  await typeIfExists(page, '#contact_first_name_2', data.provider_technical_contact_first_name);
-  await typeIfExists(page, '#contact_last_name_2', data.provider_technical_contact_last_name);
-  await typeIfExists(page, '#contact_email_2', data.provider_technical_contact_email);
-}
-
-    // === DT CONTACT SECTION ===
+    // DT CONTACT SECTION
     console.log('Filling DT Contacts section...');
     await typeIfExists(page, '#provider_contact_person', data.provider_contact_person);
     await typeIfExists(page, '#provider_contact_distribusion_account_manager', data.provider_contact_distribusion_account_manager);
     
-    // === CONTRACT DETAILS ===
+    // CONTRACT DETAILS
     console.log('Filling Contract Details...');
     await typeIfExists(page, '#provider_contracts_attributes_0_effective_date', data.provider_contracts_attributes_effective_date);
     await typeIfExists(page, '#provider_contracts_attributes_0_duration', data.provider_contracts_attributes_duration || '3 years');
@@ -308,7 +310,7 @@ if (data.provider_technical_contact_first_name) {
       await selectByText(page, '#provider_contracts_attributes_0_invoicing_entity_id', data.provider_contracts_attributes_invoicing_entity);
     }
     
-    // === INVOICE INFORMATION ===
+    // INVOICE INFORMATION
     console.log('Filling Invoice Information...');
     if (data.provider_currency_id) {
       await selectByText(page, '#provider_currency_id', data.provider_currency_id);
@@ -324,7 +326,7 @@ if (data.provider_technical_contact_first_name) {
       await selectByText(page, '#provider_invoicing_cadence', data.provider_invoicing_cadence);
     }
     
-    // === COMMISSIONS & FEES ===
+    // COMMISSIONS & FEES
     console.log('Filling Commissions & Fees...');
     await typeIfExists(page, '#provider_commission_affiliate_in_percent', String(data.provider_commission_rate_for_affiliate_partners || '0'));
     await typeIfExists(page, '#provider_commission_stationary_in_percent', String(data.provider_commission_rate_for_stationary_agencies || '0'));
@@ -362,8 +364,17 @@ if (data.provider_technical_contact_first_name) {
     
   } catch (error) {
     console.error('Error:', error.message);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
   } finally {
     if (browser) await browser.close();
   }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log('Credentials loaded:', !!(PORTAL_USERNAME && PORTAL_PASSWORD));
 });
