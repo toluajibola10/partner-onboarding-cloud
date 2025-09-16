@@ -9,7 +9,8 @@ app.use(express.json());
 const PORTAL_USERNAME = process.env.PORTAL_EMAIL;
 const PORTAL_PASSWORD = process.env.PORTAL_PASSWORD;
 
-// Helper function to select dropdown by text
+// === HELPER FUNCTIONS ===
+
 const selectByText = async (page, selector, text) => {
   if (!text) return;
   const optionValue = await page.evaluate((sel, txt) => {
@@ -26,16 +27,37 @@ const selectByText = async (page, selector, text) => {
   }
 };
 
-// Helper function for login
+const typeIfExists = async (page, selector, text) => {
+  if (text === undefined || text === null || text === '') return;
+  try {
+    await page.waitForSelector(selector, { visible: true, timeout: 3000 });
+    await page.type(selector, String(text));
+  } catch (error) {
+    console.warn(`Could not find selector "${selector}", skipping type operation.`);
+  }
+};
+
+// New resilient helper for select dropdowns
+const selectByTextIfExists = async (page, selector, text) => {
+  if (!text) return;
+  try {
+    await page.waitForSelector(selector, { visible: true, timeout: 3000 });
+    await selectByText(page, selector, text);
+  } catch (error) {
+    console.warn(`Could not find selector "${selector}" for selection, skipping.`);
+  }
+};
+
+
+// === LOGIN LOGIC ===
+
 const loginToPortal = async (page) => {
   console.log('Navigating to login...');
   await page.goto('https://partner.distribusion.com/session/new', {
     waitUntil: 'networkidle2',
     timeout: 30000
   });
-
   await page.waitForTimeout(3000);
-
   const emailSelectors = ['#user_email', 'input[name="user[email]"]', 'input[type="email"]', '#sign_in_email'];
   let emailSelector = null;
   for (const sel of emailSelectors) {
@@ -46,7 +68,6 @@ const loginToPortal = async (page) => {
     }
   }
   if (!emailSelector) throw new Error('Could not find email input field');
-
   const passwordSelectors = ['#user_password', 'input[name="user[password]"]', 'input[type="password"]', '#sign_in_password'];
   let passwordSelector = null;
   for (const sel of passwordSelectors) {
@@ -57,25 +78,22 @@ const loginToPortal = async (page) => {
     }
   }
   if (!passwordSelector) throw new Error('Could not find password input field');
-
   await page.type(emailSelector, PORTAL_USERNAME);
   await page.type(passwordSelector, PORTAL_PASSWORD);
-
   const submitButton = await page.$('button[type="submit"], input[type="submit"], button[name="commit"]');
   if (!submitButton) throw new Error('Could not find submit button');
-
   console.log('Submitting login...');
   await Promise.all([
     page.waitForNavigation({ waitUntil: 'networkidle2' }),
     submitButton.click()
   ]);
-
   if (page.url().includes('session') || page.url().includes('sign_in')) {
     throw new Error('Login failed - check credentials');
   }
-
   console.log('Login successful');
 };
+
+// === API ROUTES ===
 
 app.get('/', (req, res) => {
   res.json({
@@ -98,18 +116,13 @@ app.post('/api/carrier_groups', async (req, res) => {
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled']
     });
-
     const page = await browser.newPage();
     await page.setViewport({ width: 1366, height: 768 });
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-
     await loginToPortal(page);
-
     console.log('Going to carrier groups form...');
     await page.goto('https://partner.distribusion.com/carrier_groups/new?locale=en', { waitUntil: 'networkidle2' });
-
     await page.waitForSelector('#carrier_group_name', { visible: true });
-
     console.log('Filling carrier group form...');
     await page.type('#carrier_group_name', String(data.carrier_group_name || ''));
     await page.type('#carrier_group_address', String(data.carrier_group_address || ''));
@@ -127,40 +140,27 @@ app.post('/api/carrier_groups', async (req, res) => {
       page.click('form#new_carrier_group button.btn-success')
     ]);
     
-    // ✅ START: FINAL, ROBUST ID EXTRACTION LOGIC
-    await page.waitForTimeout(1500); // Wait for any final client-side updates
-
+    // ✅ IMPROVED CARRIER GROUP ID EXTRACTION
     let groupId = null;
     const finalUrl = page.url();
-    console.log(`Landed on URL after submission: ${finalUrl}`);
-
-    // Method 1: Try to get ID from the final URL (e.g. /carrier_groups/1234)
-    let urlMatch = finalUrl.match(/carrier_groups\/(\d+)/);
-    if (urlMatch && urlMatch[1]) {
-        groupId = urlMatch[1];
-        console.log(`Extracted groupId '${groupId}' from the page URL.`);
-    } else {
-        // Method 2 (Fallback): If on list page, get ID from the first row in the table
-        console.log('Could not find ID in URL. Assuming redirect to list page and getting ID from the first row.');
-        try {
-            // This selector finds the link in the first row of the main table
-            const firstRowLinkSelector = 'table.table tbody tr:first-child a[href*="/carrier_groups/"]';
-            await page.waitForSelector(firstRowLinkSelector, { timeout: 10000 });
-            const linkHref = await page.$eval(firstRowLinkSelector, el => el.getAttribute('href'));
-            
-            urlMatch = linkHref.match(/carrier_groups\/(\d+)/);
-            if (urlMatch && urlMatch[1]) {
-                groupId = urlMatch[1];
-                console.log(`Extracted groupId '${groupId}' from the first row of the list.`);
-            }
-        } catch (e) {
-            console.warn('Could not extract ID from the first row of the list. Proceeding without ID.');
-        }
+    let groupIdMatch = finalUrl.match(/carrier_groups\/(\d+)/);
+    
+    if (groupIdMatch && groupIdMatch[1]) {
+      groupId = groupIdMatch[1];
+    } else if (finalUrl.includes('/carrier_groups') && !finalUrl.includes('/new')) {
+      console.log('Could not find ID in URL, trying to get ID from list page...');
+      try {
+        const firstLink = await page.$eval('table tbody tr:first-child a[href*="/carrier_groups/"]',
+          el => el.getAttribute('href'));
+        groupIdMatch = firstLink.match(/carrier_groups\/(\d+)/);
+        groupId = groupIdMatch ? groupIdMatch[1] : null;
+      } catch (e) {
+        console.log('Could not extract ID from list page');
+      }
     }
-    // ✅ END: FINAL ID EXTRACTION LOGIC
-
-    const carrierGroupUrl = groupId ? `https://partner.distribusion.com/carrier_groups/${groupId}` : finalUrl;
-    console.log('Carrier group URL:', carrierGroupUrl);
+    
+    const carrierGroupUrl = groupId ? `https://partner.distribusion.com/carrier_groups/${groupId}?locale=en` : finalUrl;
+    console.log('Carrier group created with ID:', groupId);
     res.json({ success: true, groupId: groupId, carrierGroupUrl: carrierGroupUrl });
 
   } catch (error) {
@@ -178,6 +178,11 @@ app.post('/api/providers', async (req, res) => {
     return res.status(400).json({ success: false, error: 'Missing portal credentials' });
   }
 
+  // ✅ IMPROVED: ADDED REQUIRED FIELD VALIDATION
+  if (!data.provider_group_id) {
+    return res.status(400).json({ success: false, error: 'provider_group_id is required' });
+  }
+
   let browser;
   try {
     browser = await puppeteer.launch({
@@ -185,21 +190,17 @@ app.post('/api/providers', async (req, res) => {
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
     });
-
     const page = await browser.newPage();
     await page.setViewport({ width: 1366, height: 768 });
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-
     await loginToPortal(page);
-
     console.log('Going to provider form...');
     await page.goto('https://partner.distribusion.com/providers/new?locale=en', { waitUntil: 'networkidle2', timeout: 60000 });
-
     console.log('Filling provider form section by section...');
 
     // === SECTION: BASIC & LEGAL INFORMATION ===
     await page.type('#provider_display_name', String(data.provider_display_name || ''));
-    await page.select('#provider_group_id', String(data.provider_group_id || ''));
+    await page.select('#provider_group_id', String(data.provider_group_id)); // No fallback, as it's validated
     if (data.provider_revenue_stream_type) await selectByText(page, '#provider_revenue_stream_id', data.provider_revenue_stream_type);
     if (data.provider_status) await selectByText(page, '#provider_status_id', data.provider_status);
     if (data.provider_carrier_type) await selectByText(page, '#provider_carrier_type_id', data.provider_carrier_type);
@@ -212,55 +213,55 @@ app.post('/api/providers', async (req, res) => {
     await page.type('#provider_bic', String(data.provider_bic || ''));
     await page.type('#provider_authorised_representative', String(data.provider_authorised_representative || ''));
     
+    // ✅ IMPROVED: USING RESILIENT SELECT HELPER
     // === SECTION: CONTACTS ===
     console.log('Filling Contacts section...');
-    if (data.provider_business_contact_first_name) {
-      await page.waitForSelector('#provider_contacts_attributes_0_contact_type', { visible: true });
-      await selectByText(page, '#provider_contacts_attributes_0_contact_type', 'Business');
-      await page.type('#provider_contacts_attributes_0_first_name', String(data.provider_business_contact_first_name));
-      await page.type('#provider_contacts_attributes_0_last_name', String(data.provider_business_contact_last_name || ''));
-      await page.type('#provider_contacts_attributes_0_email', String(data.provider_business_contact_email || ''));
-    }
-    if (data.provider_technical_contact_first_name) {
-      await page.waitForSelector('#provider_contacts_attributes_1_contact_type', { visible: true });
-      await selectByText(page, '#provider_contacts_attributes_1_contact_type', 'Technical');
-      await page.type('#provider_contacts_attributes_1_first_name', String(data.provider_technical_contact_first_name));
-      await page.type('#provider_contacts_attributes_1_last_name', String(data.provider_technical_contact_last_name || ''));
-      await page.type('#provider_contacts_attributes_1_email', String(data.provider_technical_contact_email || ''));
-    }
+    await selectByTextIfExists(page, '#provider_contacts_attributes_0_contact_type', 'Business');
+    await typeIfExists(page, '#provider_contacts_attributes_0_first_name', data.provider_business_contact_first_name);
+    await typeIfExists(page, '#provider_contacts_attributes_0_last_name',  data.provider_business_contact_last_name);
+    await typeIfExists(page, '#provider_contacts_attributes_0_email',      data.provider_business_contact_email);
+    
+    await selectByTextIfExists(page, '#provider_contacts_attributes_1_contact_type', 'Technical');
+    await typeIfExists(page, '#provider_contacts_attributes_1_first_name', data.provider_technical_contact_first_name);
+    await typeIfExists(page, '#provider_contacts_attributes_1_last_name',  data.provider_technical_contact_last_name);
+    await typeIfExists(page, '#provider_contacts_attributes_1_email',      data.provider_technical_contact_email);
 
     // === SECTION: DT CONTACT ===
     console.log('Filling DT Contacts section...');
-    await page.type('#provider_contact_person', String(data.provider_contact_person || ''));
-    await page.type('#provider_contact_distribusion_account_manager', String(data.provider_contact_distribusion_account_manager || ''));
+    await typeIfExists(page, '#provider_contact_person', data.provider_contact_person);
+    await typeIfExists(page, '#provider_contact_distribusion_account_manager', data.provider_contact_distribusion_account_manager);
 
     // === SECTION: CONTRACT DETAILS ===
     console.log('Filling Contract Details section...');
-    await page.type('#provider_contracts_attributes_0_effective_date', String(data.provider_contracts_attributes_effective_date || ''));
-    await page.type('#provider_contracts_attributes_0_duration', String(data.provider_contracts_attributes_duration || '3 years'));
-    await page.type('#provider_contracts_attributes_0_termination_notice', String(data.provider_contracts_attributes_termination_notice || '6 months'));
-    await page.type('#provider_contracts_attributes_0_deposit_amount', String(data.provider_contracts_attributes_deposit_amount || '0'));
-    await page.type('#provider_contracts_attributes_0_contract_directory_url', String(data.provider_contracts_attributes_contract_directory_url || ''));
-    if (data.provider_contracts_attributes_checked_by_legal === 'yes') await page.click('#provider_contracts_attributes_0_checked_by_legal');
+    await typeIfExists(page, '#provider_contracts_attributes_0_effective_date', data.provider_contracts_attributes_effective_date);
+    await typeIfExists(page, '#provider_contracts_attributes_0_duration', data.provider_contracts_attributes_duration);
+    await typeIfExists(page, '#provider_contracts_attributes_0_termination_notice', data.provider_contracts_attributes_termination_notice);
+    await typeIfExists(page, '#provider_contracts_attributes_0_deposit_amount', data.provider_contracts_attributes_deposit_amount);
+    await typeIfExists(page, '#provider_contracts_attributes_0_contract_directory_url', data.provider_contracts_attributes_contract_directory_url);
+    if (data.provider_contracts_attributes_checked_by_legal === 'yes') {
+        try {
+            await page.click('#provider_contracts_attributes_0_checked_by_legal');
+        } catch(e) { console.warn('Could not click "checked by legal" checkbox.'); }
+    }
     if (data.provider_contracts_attributes_invoicing_entity) await selectByText(page, '#provider_contracts_attributes_0_invoicing_entity_id', data.provider_contracts_attributes_invoicing_entity);
 
     // === SECTION: INVOICE & COMMISSIONS ===
     console.log('Filling Invoice/Commissions section...');
     if (data.provider_currency_id) await selectByText(page, '#provider_currency_id', data.provider_currency_id);
     if (data.provider_invoicing_type) await selectByText(page, '#provider_invoicing_type_id', data.provider_invoicing_type);
-    await page.type('#provider_email_for_invoicing', String(data.provider_email_for_invoicing || ''));
+    await typeIfExists(page, '#provider_email_for_invoicing', data.provider_email_for_invoicing);
     if (data.provider_invoicing_cadence) await selectByText(page, '#provider_invoicing_cadence', data.provider_invoicing_cadence);
-    await page.type('#provider_commission_affiliate_in_percent', String(data.provider_commission_rate_for_affiliate_partners || '0'));
-    await page.type('#provider_commission_stationary_in_percent', String(data.provider_commission_rate_for_stationary_agencies || '0'));
-    await page.type('#provider_commission_online_in_percent', String(data.provider_commission_rate_for_online_agencies || '0'));
-    await page.type('#provider_commission_white_label_in_percent', String(data.provider_commission_rate_for_ota_white_labels || '0'));
-    await page.type('#provider_commission_point_of_sale_in_percent', String(data.provider_commission_rate_for_points_of_sale || '0'));
-    await page.type('#provider_booking_transaction_fee_in_percent', String(data.provider_booking_transaction_fee_in_percent || '0'));
-    await page.type('#provider_transaction_fee_in_cents', String(data.provider_transaction_fee_in_cents || '0'));
-    await page.type('#provider_ancillary_transaction_fee_fixed_in_cents', String(data.provider_ancillary_transaction_fee_fixed_in_cents || '0'));
-    await page.type('#provider_ancillary_transaction_fee_in_percent', String(data.provider_ancillary_transaction_fee_in_percent || '0'));
-    await page.type('#provider_vat_rate_for_invoicing', String(data.provider_vat_rate_for_invoicing || '0'));
-    await page.type('#provider_payment_fee_owl', String(data.provider_payment_fee_owl || '0'));
+    await typeIfExists(page, '#provider_commission_affiliate_in_percent', data.provider_commission_rate_for_affiliate_partners);
+    await typeIfExists(page, '#provider_commission_stationary_in_percent', data.provider_commission_rate_for_stationary_agencies);
+    await typeIfExists(page, '#provider_commission_online_in_percent', data.provider_commission_rate_for_online_agencies);
+    await typeIfExists(page, '#provider_commission_white_label_in_percent', data.provider_commission_rate_for_ota_white_labels);
+    await typeIfExists(page, '#provider_commission_point_of_sale_in_percent', data.provider_commission_rate_for_points_of_sale);
+    await typeIfExists(page, '#provider_booking_transaction_fee_in_percent', data.provider_booking_transaction_fee_in_percent);
+    await typeIfExists(page, '#provider_transaction_fee_in_cents', data.provider_transaction_fee_in_cents);
+    await typeIfExists(page, '#provider_ancillary_transaction_fee_fixed_in_cents', data.provider_ancillary_transaction_fee_fixed_in_cents);
+    await typeIfExists(page, '#provider_ancillary_transaction_fee_in_percent', data.provider_ancillary_transaction_fee_in_percent);
+    await typeIfExists(page, '#provider_vat_rate_for_invoicing', data.provider_vat_rate_for_invoicing);
+    await typeIfExists(page, '#provider_payment_fee_owl', data.provider_payment_fee_owl);
 
     console.log('Submitting provider form...');
     await Promise.all([
@@ -268,9 +269,13 @@ app.post('/api/providers', async (req, res) => {
       page.click('form#new_provider button[type="submit"]')
     ]);
 
+    // ✅ IMPROVED: ADDED PROVIDER ID EXTRACTION
     const providerUrl = page.url();
-    console.log('Provider created:', providerUrl);
-    res.json({ success: true, providerUrl: providerUrl });
+    const providerIdMatch = providerUrl.match(/providers\/(\d+)/);
+    const providerId = providerIdMatch ? providerIdMatch[1] : null;
+    
+    console.log('Provider created with ID:', providerId);
+    res.json({ success: true, providerId: providerId, providerUrl: providerUrl });
 
   } catch (error) {
     console.error('Error:', error.message);
