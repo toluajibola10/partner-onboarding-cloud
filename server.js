@@ -95,61 +95,113 @@ app.get('/', (req, res) => {
   });
 });
 
-// CARRIER GROUP CREATION (Your proven version)
+// CARRIER GROUP CREATION
 app.post('/api/carrier_groups', async (req, res) => {
-  const data = req.body;
-  if (!PORTAL_USERNAME || !PORTAL_PASSWORD) {
-    return res.status(400).json({ success: false, error: 'Missing portal credentials' });
-  }
+ const data = req.body;
 
-  let browser;
-  try {
-    browser = await puppeteer.launch({
-      headless: 'new',
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled']
-    });
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1366, height: 768 });
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-    await loginToPortal(page);
-    console.log('Going to carrier groups form...');
-    await page.goto('https://partner.distribusion.com/carrier_groups/new?locale=en', { waitUntil: 'networkidle2' });
-    if (!(await page.$('#carrier_group_name'))) {
-      throw new Error('Carrier group form not found');
-    }
-    console.log('Filling carrier group form...');
-    await page.type('#carrier_group_name', String(data.carrier_group_name || ''));
-    await page.type('#carrier_group_address', String(data.carrier_group_address || ''));
-    await page.type('#carrier_group_vat_no', String(data.carrier_group_vat_no || ''));
-    await page.type('#carrier_group_iban', String(data.carrier_group_iban || ''));
-    await page.type('#carrier_group_bic', String(data.carrier_group_bic || ''));
-    if (data.carrier_group_country_code) await page.select('#carrier_group_country_code', data.carrier_group_country_code);
-    if (data.carrier_group_currency_id) await selectByText(page, '#carrier_group_currency_id', data.carrier_group_currency_id);
-    if (data.carrier_group_invoicing_entity) await selectByText(page, '#carrier_group_invoicing_entity_id', data.carrier_group_invoicing_entity);
-    if (data.carrier_group_invoicing_cadence) await selectByText(page, '#carrier_group_invoicing_cadence', data.carrier_group_invoicing_cadence);
 
-    console.log('Submitting form...');
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'networkidle2' }),
-      page.click('form#new_carrier_group button.btn-success')
-    ]);
+ if (!PORTAL_USERNAME || !PORTAL_PASSWORD) {
+   return res.status(400).json({
+     success: false,
+     error: 'Missing portal credentials'
+   });
+ }
 
-    const url = page.url();
-    const groupIdMatch = url.match(/carrier_groups\/(\d+)/);
-    const groupId = groupIdMatch ? groupIdMatch[1] : null;
-    const carrierGroupUrl = groupId ? `https://partner.distribusion.com/carrier_groups/${groupId}?locale=en` : null;
 
-    console.log('Carrier group created with ID:', groupId);
-    console.log('Carrier group URL:', carrierGroupUrl);
-    res.json({ success: true, groupId: groupId, carrierGroupUrl: carrierGroupUrl });
-  } catch (error) {
-    console.error('Error:', error.message);
-    res.status(500).json({ success: false, error: error.message });
-  } finally {
-    if (browser) await browser.close();
-  }
+ let browser;
+ try {
+   browser = await puppeteer.launch({
+     headless: 'new',
+     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+     args: [
+       '--no-sandbox',
+       '--disable-setuid-sandbox',
+       '--disable-dev-shm-usage',
+       '--disable-blink-features=AutomationControlled'
+     ]
+   });
+
+
+   const page = await browser.newPage();
+   await page.setViewport({ width: 1366, height: 768 });
+   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+
+   // Login
+   await loginToPortal(page);
+
+
+   // Navigate to carrier groups
+   console.log('Going to carrier groups form...');
+   await page.goto('https://partner.distribusion.com/carrier_groups/new?locale=en', {
+     waitUntil: 'networkidle2'
+   });
+
+
+   // Check if we're on the right page
+   const formExists = await page.$('#carrier_group_name') !== null;
+   if (!formExists) {
+     throw new Error('Carrier group form not found - may need to navigate through menus');
+   }
+
+
+   // Fill all carrier group fields
+   console.log('Filling carrier group form...');
+   await page.type('#carrier_group_name', String(data.carrier_group_name || ''));
+   await page.type('#carrier_group_address', String(data.carrier_group_address || ''));
+   await page.type('#carrier_group_vat_no', String(data.carrier_group_vat_no || ''));
+   await page.type('#carrier_group_iban', String(data.carrier_group_iban || ''));
+   await page.type('#carrier_group_bic', String(data.carrier_group_bic || ''));
+
+
+   if (data.carrier_group_country_code) {
+     await page.select('#carrier_group_country_code', data.carrier_group_country_code);
+   }
+
+
+   if (data.carrier_group_currency_id) {
+     await selectByText(page, '#carrier_group_currency_id', data.carrier_group_currency_id);
+   }
+
+
+   if (data.carrier_group_invoicing_entity) {
+     await selectByText(page, '#carrier_group_invoicing_entity_id', data.carrier_group_invoicing_entity);
+   }
+
+
+   if (data.carrier_group_invoicing_cadence) {
+     await selectByText(page, '#carrier_group_invoicing_cadence', data.carrier_group_invoicing_cadence);
+   }
+
+
+   // Submit
+   console.log('Submitting form...');
+   await Promise.all([
+     page.waitForNavigation({ waitUntil: 'networkidle2' }),
+     page.click('form#new_carrier_group button.btn-success')
+   ]);
+
+
+   const url = page.url();
+   const groupIdMatch = url.match(/carrier_groups\/(\d+)/);
+   const groupId = groupIdMatch ? groupIdMatch[1] : null;
+
+
+   console.log('Carrier group created with ID:', groupId);
+   res.json({ success: true, groupId: groupId });
+
+
+ } catch (error) {
+   console.error('Error:', error.message);
+   res.status(500).json({
+     success: false,
+     error: error.message
+   });
+ } finally {
+   if (browser) await browser.close();
+ }
 });
+
 
 // PROVIDER CREATION
 app.post('/api/providers', async (req, res) => {
