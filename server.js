@@ -31,11 +31,14 @@ const selectByText = async (page, selector, text) => {
 
 // Helper function to type only if field exists
 const typeIfExists = async (page, selector, text, timeout = 5000) => {
-  if (text === undefined || text === null || text === '') return;
+  if (text === undefined || text === null || text === '') {
+    console.log(`Skipping ${selector} - no value provided`);
+    return;
+  }
   try {
     await page.waitForSelector(selector, { visible: true, timeout: timeout });
     await page.type(selector, String(text));
-    console.log(`✓ Filled ${selector}`);
+    console.log(`✓ Filled ${selector} with value: "${text}"`);
   } catch (error) {
     console.warn(`Could not find selector "${selector}", skipping.`);
   }
@@ -332,40 +335,11 @@ app.post('/api/providers', async (req, res) => {
   console.log('✓ Selected country code →', selectedFinal || '(none)');
 }
     
+console.log('Debug - Commercial Register Value:', data.provider_commercial_register_number);
+
     await typeIfExists(page, '#provider_phone_number', data.provider_phone_number);
     await typeIfExists(page, '#provider_email', data.provider_business_contact_email);
-    /* ── Company / Commercial Register Number ───────────────────────── */
-if (data.provider_commercial_register_number !== undefined &&
-    data.provider_commercial_register_number !== null &&
-    String(data.provider_commercial_register_number).trim() !== '') {
-
-  const regValue = String(data.provider_commercial_register_number).trim();
-  console.log('📦 Incoming register number =', regValue);
-
-  // 1 try the usual way
-  await typeIfExists(page, '#provider_commercial_register_number', regValue);
-
-  // 2 verify it really took
-  const afterType = await page.$eval(
-    '#provider_commercial_register_number',
-    el => el.value
-  );
-  console.log('🔍 Value after page.type =', afterType || '(empty)');
-
-  // 3 if it’s blank, force-set it (some client JS may have wiped it)
-  if (!afterType) {
-    await page.evaluate((sel, val) => {
-      const el = document.querySelector(sel);
-      if (el) el.value = val;
-    }, '#provider_commercial_register_number', regValue);
-
-    const afterEval = await page.$eval(
-      '#provider_commercial_register_number',
-      el => el.value
-    );
-    console.log('🛠  Value after evaluate() =', afterEval || '(still empty)');
-  }
-}
+    await typeIfExists(page, '#provider_commercial_register_number', data.provider_commercial_register_number);
     await typeIfExists(page, '#provider_vat_no', data.provider_vat_no);
     await typeIfExists(page, '#provider_iban', data.provider_iban);
     await typeIfExists(page, '#provider_bic', data.provider_bic);
