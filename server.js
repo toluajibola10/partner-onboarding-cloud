@@ -323,20 +323,38 @@ app.post('/api/providers', async (req, res) => {
     await typeIfExists(page, '#provider_bic', data.provider_bic);
     await typeIfExists(page, '#provider_authorised_representative', data.provider_authorised_representative);
     
-    // === CONTACTS SECTION ===
+    // CONTACTS SECTION - Fix the contact type selection
     console.log('Filling Contacts section...');
-    
+
     // Business Contact (Row 1)
-    if (data.provider_authorised_representative) {
-      await selectByText(page, '#contact_type_1', 'Business');
+    if (data.provider_business_contact_first_name) {
+      // Wait for and select contact type FIRST
+      const contactTypeSelector1 = 'tbody tr:nth-child(1) select, #contact_type_1';
+      try {
+        await page.waitForSelector(contactTypeSelector1, { visible: true, timeout: 3000 });
+        await selectByText(page, contactTypeSelector1, 'Business');
+        console.log('✓ Selected Business contact type');
+      } catch (e) {
+        console.warn('Could not select Business contact type');
+      }
+      
       await typeIfExists(page, '#contact_first_name_1', data.provider_business_contact_first_name);
       await typeIfExists(page, '#contact_last_name_1', data.provider_business_contact_last_name);
       await typeIfExists(page, '#contact_email_1', data.provider_business_contact_email);
     }
-    
+
     // Technical Contact (Row 2)
-    if (data.provider_authorised_representative) {
-      await selectByText(page, '#contact_type_2', 'Technical');
+    if (data.provider_technical_contact_first_name) {
+      // Wait for and select contact type FIRST
+      const contactTypeSelector2 = 'tbody tr:nth-child(2) select, #contact_type_2';
+      try {
+        await page.waitForSelector(contactTypeSelector2, { visible: true, timeout: 3000 });
+        await selectByText(page, contactTypeSelector2, 'Technical');
+        console.log('✓ Selected Technical contact type');
+      } catch (e) {
+        console.warn('Could not select Technical contact type');
+      }
+      
       await typeIfExists(page, '#contact_first_name_2', data.provider_technical_contact_first_name);
       await typeIfExists(page, '#contact_last_name_2', data.provider_technical_contact_last_name);
       await typeIfExists(page, '#contact_email_2', data.provider_technical_contact_email);
@@ -480,7 +498,6 @@ app.post('/api/providers', async (req, res) => {
     const providerId = providerIdMatch ? providerIdMatch[1] : null;
     
     console.log('Provider created successfully:', providerUrl);
-    
     // Extract carrier code from the provider page
     let carrierCode = null;
     if (providerId) {
@@ -495,37 +512,26 @@ app.post('/api/providers', async (req, res) => {
           });
         }
         
-        // Extract the carrier code
+        // Extract the carrier code specifically from the Basic Information section
         carrierCode = await page.evaluate(() => {
-          // Try different possible locations for the carrier code
-          const possibleSelectors = [
-            'td:first-child',
-            'dd:first-of-type',
-            '[data-carrier-code]',
-            'td.carrier-code',
-            'span.carrier-code'
-          ];
-          
-          for (const selector of possibleSelectors) {
-            try {
-              const element = document.querySelector(selector);
-              if (element) {
-                const text = element.textContent.trim();
-                // Carrier codes are usually 3-5 uppercase letters/numbers
-                if (text && text.length <= 10 && /^[A-Z0-9]+$/.test(text)) {
-                  return text;
-                }
+          // Look for the label "Distribusion Marketing Carrier Code" and get the next element
+          const labels = document.querySelectorAll('dt, td, th');
+          for (let i = 0; i < labels.length; i++) {
+            if (labels[i].textContent.includes('Distribusion Marketing Carrier Code')) {
+              // Get the next sibling or next cell
+              const nextElement = labels[i].nextElementSibling || labels[i + 1];
+              if (nextElement) {
+                return nextElement.textContent.trim();
               }
-            } catch (e) {
-              // Continue to next selector
             }
           }
           
-          // Look for any cell with short uppercase text
-          const allCells = document.querySelectorAll('td');
-          for (const cell of allCells) {
+          // Alternative: Look for carrier code pattern
+          const cells = document.querySelectorAll('td, dd');
+          for (const cell of cells) {
             const text = cell.textContent.trim();
-            if (text && text.length >= 3 && text.length <= 5 && /^[A-Z0-9]+$/.test(text)) {
+            // Carrier codes are typically 3-6 uppercase alphanumeric characters
+            if (text && text.length >= 3 && text.length <= 6 && /^[A-Z][A-Z0-9]+$/.test(text)) {
               return text;
             }
           }
@@ -538,30 +544,27 @@ app.post('/api/providers', async (req, res) => {
         console.log('Could not extract carrier code:', extractError.message);
       }
     }
-    
+
+    // Send the success response
     res.json({
       success: true,
       providerId: providerId,
-      providerUrl: providerUrl,
       carrierCode: carrierCode
     });
-    
-  } catch (error) {
-    console.error('Error in provider creation:', error.message);
-    
-    // Return error response instead of crashing with 502
-    return res.status(400).json({ 
-      success: false, 
-      error: error.message,
-      details: 'Provider creation failed during form filling'
-    });
-  } finally {
-    if (browser) await browser.close();
-  }
-});
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log('Credentials loaded:', !!(PORTAL_USERNAME && PORTAL_PASSWORD));
+  } catch (error) {
+    // Catch any errors from the entire 'try' block
+    console.error('Error in /api/providers:', error.message);
+    console.error('Stack:', error.stack);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+
+  } finally {
+    // Ensure the browser is closed no matter what
+    if (browser) {
+      await browser.close();
+    }
+  }
 });
