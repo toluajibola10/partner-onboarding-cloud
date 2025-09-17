@@ -29,25 +29,13 @@ const selectByText = async (page, selector, text) => {
   }
 };
 
-// Update your typeIfExists function to handle numbers better
+// Helper function to type only if field exists
 const typeIfExists = async (page, selector, text, timeout = 5000) => {
-  // Handle numbers explicitly
-  if (text === undefined || text === null) {
-    console.log(`Skipping ${selector} - value is undefined or null`);
-    return;
-  }
-  
-  // Convert to string and check if empty
-  const textValue = String(text).trim();
-  if (textValue === '' || textValue === '0') {
-    console.log(`Skipping ${selector} - value is empty or zero: "${textValue}"`);
-    return;
-  }
-  
+  if (text === undefined || text === null || text === '') return;
   try {
     await page.waitForSelector(selector, { visible: true, timeout: timeout });
-    await page.type(selector, textValue);
-    console.log(`✓ Filled ${selector} with value: "${textValue}"`);
+    await page.type(selector, String(text));
+    console.log(`✓ Filled ${selector}`);
   } catch (error) {
     console.warn(`Could not find selector "${selector}", skipping.`);
   }
@@ -216,37 +204,6 @@ app.post('/api/carrier_groups', async (req, res) => {
 });
 
 // PROVIDER CREATION
-
-app.post('/api/providers', async (req, res) => {
-  // ==================== START: DEFINITIVE DEBUG LOG ====================
-  console.log('---- RAW REQUEST BODY RECEIVED ----');
-
-  // Check if the body is parsed correctly
-  console.log('Is req.body an object?', typeof req.body === 'object' && req.body !== null);
-
-  // Use the 'in' operator for the most reliable check
-  const hasCommercialRegister = 'provider_commercial_register_number' in req.body;
-  console.log('Does body contain "provider_commercial_register_number"? ->', hasCommercialRegister);
-
-  // Log all keys to find any typos or different names
-  console.log('All keys received:', Object.keys(req.body));
-
-  // If the key exists, log its value. Otherwise, state it's missing.
-  if (hasCommercialRegister) {
-    console.log('Value of provider_commercial_register_number:', req.body.provider_commercial_register_number);
-  } else {
-    console.log('Value of provider_commercial_register_number: KEY NOT FOUND');
-  }
-
-  // Log a working field for comparison
-  console.log('Value of provider_vat_no (for comparison):', req.body.provider_vat_no);
-  console.log('------------------------------------');
-  // ===================== END: DEFINITIVE DEBUG LOG =====================
-
-  const data = req.body;
-  // ... rest of your existing code ...
-});
-
 app.post('/api/providers', async (req, res) => {
   const data = req.body;
   
@@ -375,8 +332,6 @@ app.post('/api/providers', async (req, res) => {
   console.log('✓ Selected country code →', selectedFinal || '(none)');
 }
     
-console.log('Debug - Commercial Register Value:', data.provider_commercial_register_number);
-
     await typeIfExists(page, '#provider_phone_number', data.provider_phone_number);
     await typeIfExists(page, '#provider_email', data.provider_business_contact_email);
     await typeIfExists(page, '#provider_commercial_register_number', data.provider_commercial_register_number);
