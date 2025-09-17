@@ -216,6 +216,37 @@ app.post('/api/carrier_groups', async (req, res) => {
 });
 
 // PROVIDER CREATION
+
+app.post('/api/providers', async (req, res) => {
+  // ==================== START: DEFINITIVE DEBUG LOG ====================
+  console.log('---- RAW REQUEST BODY RECEIVED ----');
+
+  // Check if the body is parsed correctly
+  console.log('Is req.body an object?', typeof req.body === 'object' && req.body !== null);
+
+  // Use the 'in' operator for the most reliable check
+  const hasCommercialRegister = 'provider_commercial_register_number' in req.body;
+  console.log('Does body contain "provider_commercial_register_number"? ->', hasCommercialRegister);
+
+  // Log all keys to find any typos or different names
+  console.log('All keys received:', Object.keys(req.body));
+
+  // If the key exists, log its value. Otherwise, state it's missing.
+  if (hasCommercialRegister) {
+    console.log('Value of provider_commercial_register_number:', req.body.provider_commercial_register_number);
+  } else {
+    console.log('Value of provider_commercial_register_number: KEY NOT FOUND');
+  }
+
+  // Log a working field for comparison
+  console.log('Value of provider_vat_no (for comparison):', req.body.provider_vat_no);
+  console.log('------------------------------------');
+  // ===================== END: DEFINITIVE DEBUG LOG =====================
+
+  const data = req.body;
+  // ... rest of your existing code ...
+});
+
 app.post('/api/providers', async (req, res) => {
   const data = req.body;
   
