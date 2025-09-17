@@ -310,13 +310,13 @@ app.post('/api/providers', async (req, res) => {
     await typeIfExists(page, '#provider_legal_name', data.provider_legal_name);
     await typeIfExists(page, '#provider_address', data.provider_address);
     
-    if (data.provider_country_code) {
-      await page.select('#provider_country_code', data.provider_country_code);
+    if (data.provider_country_name) {
+      await page.select('#provider_country_code', data.provider_country_name);
       console.log('✓ Selected country code');
     }
     
     await typeIfExists(page, '#provider_phone_number', data.provider_phone_number);
-    await typeIfExists(page, '#provider_email', data.provider_email);
+    await typeIfExists(page, '#provider_email', data.provider_business_contact_email);
     await typeIfExists(page, '#provider_commercial_register_number', data.provider_commercial_register_number);
     await typeIfExists(page, '#provider_vat_no', data.provider_vat_no);
     await typeIfExists(page, '#provider_iban', data.provider_iban);
