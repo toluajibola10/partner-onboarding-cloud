@@ -247,7 +247,52 @@ app.post('/api/providers', async (req, res) => {
     
     // === BASIC INFORMATION ===
     await page.type('#provider_display_name', data.provider_display_name || '');
-    await page.select('#provider_group_id', String(data.provider_group_id));
+
+    // FIX 5: Better group ID validation and selection
+    console.log('Selecting carrier group ID:', data.provider_group_id);
+    try {
+      // Wait for the dropdown to be ready
+      await page.waitForSelector('#provider_group_id', { visible: true });
+      
+      // Check if the group ID exists in the dropdown options
+      const groupIdExists = await page.evaluate((groupId) => {
+        const select = document.querySelector('#provider_group_id');
+        if (!select) return false;
+        
+        // Check if the groupId exists as a value in any option
+        const options = Array.from(select.options);
+        return options.some(option => option.value === String(groupId));
+      }, data.provider_group_id);
+      
+      if (!groupIdExists) {
+        // Get available options for debugging
+        const availableOptions = await page.evaluate(() => {
+          const select = document.querySelector('#provider_group_id');
+          if (!select) return [];
+          return Array.from(select.options).map(opt => ({
+            value: opt.value,
+            text: opt.textContent.trim()
+          }));
+        });
+        
+        console.error('Group ID not found in dropdown. Available options:', availableOptions);
+        throw new Error(`Group ID ${data.provider_group_id} not found in dropdown. Available group IDs: ${availableOptions.map(o => o.value).join(', ')}`);
+      }
+      
+      // Select the group ID
+      await page.select('#provider_group_id', String(data.provider_group_id));
+      
+      // Verify it was selected
+      const selectedValue = await page.$eval('#provider_group_id', el => el.value);
+      console.log('✓ Selected group ID:', selectedValue);
+      
+      if (!selectedValue || selectedValue === '') {
+        throw new Error('Failed to select provider_group_id');
+      }
+    } catch (error) {
+      console.error('Failed to select group ID:', error.message);
+      throw error;
+    }
     
     if (data.provider_revenue_stream_type) {
       await selectByText(page, '#provider_revenue_stream_id', data.provider_revenue_stream_type);
@@ -368,7 +413,7 @@ app.post('/api/providers', async (req, res) => {
     }
     
     // Commission rates
-    await typeIfExists(page, '#provider_commission_rate_for_affiliate_partners', String(data.provider_commission_rate_for_affiliate_partners || '0'));
+    await typeIfExists(page, '#provider_commission_rate_for_affiliates', String(data.provider_commission_rate_for_affiliate_partners || '0'));
     await typeIfExists(page, '#provider_commission_rate_for_stationary_agencies', String(data.provider_commission_rate_for_stationary_agencies || '0'));
     await typeIfExists(page, '#provider_commission_rate_for_online_agencies', String(data.provider_commission_rate_for_online_agencies || '0'));
     await typeIfExists(page, '#provider_commission_rate_for_ota_white_labels', String(data.provider_commission_rate_for_ota_white_labels || '0'));
@@ -393,16 +438,17 @@ app.post('/api/providers', async (req, res) => {
     
     const providerUrl = page.url();
     
+    // FIX 4: Better error recovery
     // Check if creation was successful
     if (providerUrl.includes('/providers?') || providerUrl.includes('/new')) {
-      // Take screenshot for debugging
-      await page.screenshot({ path: 'provider-error.png', fullPage: true });
-      
       // Try to get error messages
       const errors = await page.evaluate(() => {
         const errorTexts = [];
         document.querySelectorAll('.error, .alert, .field_with_errors, [class*="error"]').forEach(el => {
-          if (el.textContent.trim()) errorTexts.push(el.textContent.trim());
+          const text = el.textContent.trim();
+          if (text && !errorTexts.includes(text)) {
+            errorTexts.push(text);
+          }
         });
         return errorTexts;
       });
@@ -410,7 +456,23 @@ app.post('/api/providers', async (req, res) => {
       console.error('Provider creation failed. URL:', providerUrl);
       console.error('Validation errors:', errors);
       
-      throw new Error(`Provider creation failed. Check provider-error.png. Errors: ${errors.join(', ') || 'Unknown validation error'}`);
+      // Try to take screenshot only if not in production
+      if (process.env.NODE_ENV !== 'production') {
+        try {
+          await page.screenshot({ path: 'provider-error.png', fullPage: true });
+          console.log('Debug screenshot saved as provider-error.png');
+        } catch (screenshotError) {
+          console.log('Could not save screenshot:', screenshotError.message);
+        }
+      }
+      
+      // Return proper error response instead of throwing
+      return res.status(400).json({
+        success: false,
+        error: 'Provider creation failed - form validation error',
+        validationErrors: errors.length > 0 ? errors : ['Unknown validation error - check required fields'],
+        url: providerUrl
+      });
     }
     
     const providerIdMatch = providerUrl.match(/providers\/(\d+)/);
@@ -425,10 +487,13 @@ app.post('/api/providers', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Error:', error.message);
-    res.status(500).json({ 
+    console.error('Error in provider creation:', error.message);
+    
+    // Return error response instead of crashing with 502
+    return res.status(400).json({ 
       success: false, 
-      error: error.message 
+      error: error.message,
+      details: 'Provider creation failed during form filling'
     });
   } finally {
     if (browser) await browser.close();
