@@ -29,16 +29,25 @@ const selectByText = async (page, selector, text) => {
   }
 };
 
-// Helper function to type only if field exists
+// Update your typeIfExists function to handle numbers better
 const typeIfExists = async (page, selector, text, timeout = 5000) => {
-  if (text === undefined || text === null || text === '') {
-    console.log(`Skipping ${selector} - no value provided`);
+  // Handle numbers explicitly
+  if (text === undefined || text === null) {
+    console.log(`Skipping ${selector} - value is undefined or null`);
     return;
   }
+  
+  // Convert to string and check if empty
+  const textValue = String(text).trim();
+  if (textValue === '' || textValue === '0') {
+    console.log(`Skipping ${selector} - value is empty or zero: "${textValue}"`);
+    return;
+  }
+  
   try {
     await page.waitForSelector(selector, { visible: true, timeout: timeout });
-    await page.type(selector, String(text));
-    console.log(`✓ Filled ${selector} with value: "${text}"`);
+    await page.type(selector, textValue);
+    console.log(`✓ Filled ${selector} with value: "${textValue}"`);
   } catch (error) {
     console.warn(`Could not find selector "${selector}", skipping.`);
   }
