@@ -568,3 +568,9 @@ app.post('/api/providers', async (req, res) => {
     }
   }
 });
+
+// ─── start the HTTP server ─────────────────────────────
+const PORT = process.env.PORT || 10000;   // Render injects $PORT
+app.listen(PORT, () => {
+  console.log(`✅ Server listening on ${PORT}`);
+});
