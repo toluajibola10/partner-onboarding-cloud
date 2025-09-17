@@ -327,7 +327,7 @@ app.post('/api/providers', async (req, res) => {
     console.log('Filling Contacts section...');
     
     // Business Contact (Row 1)
-    if (data.provider_business_contact_first_name) {
+    if (data.provider_authorised_representative) {
       await selectByText(page, '#contact_type_1', 'Business');
       await typeIfExists(page, '#contact_first_name_1', data.provider_business_contact_first_name);
       await typeIfExists(page, '#contact_last_name_1', data.provider_business_contact_last_name);
@@ -335,7 +335,7 @@ app.post('/api/providers', async (req, res) => {
     }
     
     // Technical Contact (Row 2)
-    if (data.provider_technical_contact_first_name) {
+    if (data.provider_authorised_representative) {
       await selectByText(page, '#contact_type_2', 'Technical');
       await typeIfExists(page, '#contact_first_name_2', data.provider_technical_contact_first_name);
       await typeIfExists(page, '#contact_last_name_2', data.provider_technical_contact_last_name);
@@ -344,7 +344,8 @@ app.post('/api/providers', async (req, res) => {
 
     // === DT CONTACT SECTION ===
     console.log('Filling DT Contacts section...');
-    await typeIfExists(page, '#provider_contact_person', data.provider_business_contact_email);
+    const contactPersonValue = `${data.provider_business_contact_first_name || ''} ${data.provider_business_contact_last_name || ''}\n${data.provider_business_contact_email || ''}`.trim();
+    await typeIfExists(page, '#provider_contact_person', contactPersonValue);
     await typeIfExists(page, '#provider_contact_distribusion_account_manager', data.provider_email);
     
     // === CONTRACT DETAILS ===
@@ -480,10 +481,69 @@ app.post('/api/providers', async (req, res) => {
     
     console.log('Provider created successfully:', providerUrl);
     
+    // Extract carrier code from the provider page
+    let carrierCode = null;
+    if (providerId) {
+      try {
+        console.log('Extracting carrier code from provider page...');
+        
+        // Navigate to the provider page if not already there
+        if (!providerUrl.includes(`/providers/${providerId}`)) {
+          await page.goto(`https://partner.distribusion.com/providers/${providerId}?locale=en`, {
+            waitUntil: 'networkidle2',
+            timeout: 10000
+          });
+        }
+        
+        // Extract the carrier code
+        carrierCode = await page.evaluate(() => {
+          // Try different possible locations for the carrier code
+          const possibleSelectors = [
+            'td:first-child',
+            'dd:first-of-type',
+            '[data-carrier-code]',
+            'td.carrier-code',
+            'span.carrier-code'
+          ];
+          
+          for (const selector of possibleSelectors) {
+            try {
+              const element = document.querySelector(selector);
+              if (element) {
+                const text = element.textContent.trim();
+                // Carrier codes are usually 3-5 uppercase letters/numbers
+                if (text && text.length <= 10 && /^[A-Z0-9]+$/.test(text)) {
+                  return text;
+                }
+              }
+            } catch (e) {
+              // Continue to next selector
+            }
+          }
+          
+          // Look for any cell with short uppercase text
+          const allCells = document.querySelectorAll('td');
+          for (const cell of allCells) {
+            const text = cell.textContent.trim();
+            if (text && text.length >= 3 && text.length <= 5 && /^[A-Z0-9]+$/.test(text)) {
+              return text;
+            }
+          }
+          
+          return null;
+        });
+        
+        console.log('Carrier code extracted:', carrierCode);
+      } catch (extractError) {
+        console.log('Could not extract carrier code:', extractError.message);
+      }
+    }
+    
     res.json({
       success: true,
       providerId: providerId,
-      providerUrl: providerUrl
+      providerUrl: providerUrl,
+      carrierCode: carrierCode
     });
     
   } catch (error) {
