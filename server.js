@@ -310,10 +310,27 @@ app.post('/api/providers', async (req, res) => {
     await typeIfExists(page, '#provider_legal_name', data.provider_legal_name);
     await typeIfExists(page, '#provider_address', data.provider_address);
     
-    if (data.provider_country_name) {
-      await selectByText(page, '#provider_country_code', data.provider_country_name);
-      console.log('✓ Selected country code');
-    }
+    if (data.provider_country_code) {
+  // Normalise the input once
+  const rawInput = String(data.provider_country_code).trim();
+
+  /* 1) First try the ISO-2 value directly (e.g. "UA") */
+  const isoCode = rawInput.toUpperCase();
+  await page.select('#provider_country_code', isoCode);
+
+  /* 2) Verify it really changed; if not, fall back to searching by visible text
+        (works when you passed "Ukraine", "Germany", etc.)                */
+  const actuallySelected = await page.$eval('#provider_country_code', el => el.value);
+
+  if (!actuallySelected) {
+    // fallback: search by option text
+    await selectByText(page, '#provider_country_code', rawInput);
+  }
+
+  // Final sanity-check log
+  const selectedFinal = await page.$eval('#provider_country_code', el => el.value);
+  console.log('✓ Selected country code →', selectedFinal || '(none)');
+}
     
     await typeIfExists(page, '#provider_phone_number', data.provider_phone_number);
     await typeIfExists(page, '#provider_email', data.provider_business_contact_email);
