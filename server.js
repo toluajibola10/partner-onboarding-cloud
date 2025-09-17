@@ -326,23 +326,6 @@ app.post('/api/providers', async (req, res) => {
     // CONTACTS SECTION - Fix the contact type selection
     console.log('Filling Contacts section...');
 
-    // Business Contact (Row 1)
-    if (data.provider_business_contact_first_name) {
-      // Wait for and select contact type FIRST
-      const contactTypeSelector1 = 'tbody tr:nth-child(1) select, #contact_type_1';
-      try {
-        await page.waitForSelector(contactTypeSelector1, { visible: true, timeout: 3000 });
-        await selectByText(page, contactTypeSelector1, 'Business');
-        console.log('✓ Selected Business contact type');
-      } catch (e) {
-        console.warn('Could not select Business contact type');
-      }
-      
-      await typeIfExists(page, '#contact_first_name_1', data.provider_business_contact_first_name);
-      await typeIfExists(page, '#contact_last_name_1', data.provider_business_contact_last_name);
-      await typeIfExists(page, '#contact_email_1', data.provider_business_contact_email);
-    }
-
     // Technical Contact (Row 2)
     if (data.provider_technical_contact_first_name) {
       // Wait for and select contact type FIRST
@@ -358,6 +341,23 @@ app.post('/api/providers', async (req, res) => {
       await typeIfExists(page, '#contact_first_name_2', data.provider_technical_contact_first_name);
       await typeIfExists(page, '#contact_last_name_2', data.provider_technical_contact_last_name);
       await typeIfExists(page, '#contact_email_2', data.provider_technical_contact_email);
+    }
+
+    // Business Contact (Row 3)
+    if (data.provider_business_contact_first_name) {
+      // Wait for and select contact type FIRST
+      const contactTypeSelector3 = 'tbody tr:nth-child(3) select, #contact_type_3';
+      try {
+        await page.waitForSelector(contactTypeSelector3, { visible: true, timeout: 3000 });
+        await selectByText(page, contactTypeSelector3, 'Business');
+        console.log('✓ Selected Business contact type');
+      } catch (e) {
+        console.warn('Could not select Business contact type');
+      }
+      
+      await typeIfExists(page, '#contact_first_name_1', data.provider_business_contact_first_name);
+      await typeIfExists(page, '#contact_last_name_1', data.provider_business_contact_last_name);
+      await typeIfExists(page, '#contact_email_1', data.provider_business_contact_email);
     }
 
     // === DT CONTACT SECTION ===
@@ -549,7 +549,8 @@ app.post('/api/providers', async (req, res) => {
     res.json({
       success: true,
       providerId: providerId,
-      carrierCode: carrierCode
+      carrierCode: carrierCode,
+      providerUrl: providerUrl
     });
 
   } catch (error) {
