@@ -311,7 +311,7 @@ app.post('/api/providers', async (req, res) => {
     await typeIfExists(page, '#provider_address', data.provider_address);
     
     if (data.provider_country_name) {
-      await page.select('#provider_country_code', data.provider_country_name);
+      await selectByText(page, '#provider_country_code', data.provider_country_name);
       console.log('✓ Selected country code');
     }
     
