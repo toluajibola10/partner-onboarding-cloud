@@ -295,15 +295,15 @@ app.post('/api/providers', async (req, res) => {
     }
     
     if (data.provider_revenue_stream_type) {
-      await selectByText(page, '#provider_revenue_stream_id', data.provider_revenue_stream_type);
+      await selectByText(page, '#provider_revenue_stream_type', data.provider_revenue_stream_type);
     }
     
     if (data.provider_status) {
-      await selectByText(page, '#provider_status_id', data.provider_status);
+      await selectByText(page, '#provider_status', data.provider_status);
     }
     
     if (data.provider_carrier_type) {
-      await selectByText(page, '#provider_carrier_type_id', data.provider_carrier_type);
+      await selectByText(page, '#provider_carrier_type', data.provider_carrier_type);
     }
     
     // === LEGAL INFORMATION ===
